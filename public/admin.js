@@ -36,6 +36,14 @@ function list(parent,rows,kind){
     const box=make(parent,'article');box.className='comment';
     make(box,'h3',item.title||'Comentario #'+item.id);
     make(box,'p',item.status+' · '+item.body);
+    if(item.photoCount)button(box,'Ver fotos ('+item.photoCount+')',async()=>{
+      const gallery=make(box,'div');gallery.className='photo-gallery';
+      for(let i=0;i<item.photoCount;i++){
+        const response=await fetch('/api/photos/'+kind+'/'+item.id+'?index='+i,{headers:{Authorization:'Bearer '+key}});
+        if(!response.ok)throw Error('No se pudo cargar la foto.');
+        const url=URL.createObjectURL(await response.blob()),img=make(gallery,'img');img.alt='Foto adjunta '+(i+1);img.onload=img.onerror=()=>URL.revokeObjectURL(url);img.src=url;
+      }
+    });
     if(item.status==='deleted')continue;
     for(const [label,value] of [['Publicar','public'],['Ocultar','hidden'],['Eliminar','deleted']])
       change(box,label,'/'+kind,()=>{if(value==='deleted'&&!confirm('¿Eliminar el contenido?'))throw Error('Eliminación cancelada.');return {id:item.id,status:value};});

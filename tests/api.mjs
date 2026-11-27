@@ -14,6 +14,7 @@ db.exec(readFileSync(new URL('../migrations/0003_votes_likes_index.sql',import.m
 db.exec(readFileSync(new URL('../migrations/0004_post_unique_views.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0005_device_access.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0006_recent_comments_index.sql',import.meta.url),'utf8'));
+db.exec(readFileSync(new URL('../migrations/0007_photos.sql',import.meta.url),'utf8'));
 const env={
   TURNSTILE_SITE_KEY:'test-site-key',TURNSTILE_SECRET:'test-secret',
   RATE_SECRET:'r'.repeat(64),ADMIN_TOKEN:'a'.repeat(64),
@@ -222,6 +223,28 @@ try{
   for(let i=0;i<24;i++)await req('vote',{cookie:b,data:limited});
   await req('vote',{cookie:b,data:limited,status:429});
   assert.equal((await req('posts/'+pending.id)).result.score,1);
+  await req('admin/settings',{key:env.ADMIN_TOKEN,data:{readonly:false,review:false}});
+  const photo='UklGRjAAAABXRUJQVlA4ICQAAACQAQCdASoQABAAAUAmJQBOl0AAcwAA/vPfZrQtCBz15T4laAA=';
+  await req('posts',{cookie:a,data:{category:2,title:'Foto no válida',body:'',photos:['not-an-image']},status:400});
+  const photoPost=(await req('posts',{cookie:a,data:{category:2,title:'Captura de pantalla',body:'',photos:[photo]},status:201})).result.id;
+  assert.equal((await req('posts/'+photoPost)).result.photoCount,1);
+  const photoComment=(await req('comments',{cookie:a,data:{post:photoPost,body:'',photos:[photo,photo]},status:201})).result.id;
+  assert.equal((await req('comments?post='+photoPost)).result.rows[0].photoCount,2);
+  const getPhoto=async(path,key)=>onRequest({request:new Request('https://community.test/api/'+path,{headers:key?{Authorization:'Bearer '+key}:{}}),env});
+  let image=await getPhoto('photos/post/'+photoPost);
+  assert.equal(image.status,200);assert.equal(image.headers.get('Content-Type'),'image/webp');
+  assert.equal(Buffer.from(await image.arrayBuffer()).toString('base64'),photo);
+  assert.equal((await getPhoto('photos/comment/'+photoComment+'?index=1')).status,200);
+  await req('admin/post',{key:env.ADMIN_TOKEN,data:{id:photoPost,status:'hidden'}});
+  assert.equal((await getPhoto('photos/post/'+photoPost)).status,404);
+  assert.equal((await getPhoto('photos/comment/'+photoComment)).status,404);
+  assert.equal((await getPhoto('photos/post/'+photoPost,env.ADMIN_TOKEN)).status,200);
+  await req('admin/post',{key:env.ADMIN_TOKEN,data:{id:photoPost,status:'public'}});
+  await req('posts/'+photoPost+'/edit',{cookie:a,data:{title:'Captura editada',body:'Sin fotos',photos:[]}});
+  assert.equal((await getPhoto('photos/post/'+photoPost)).status,404);
+  await req('comments/'+photoComment+'/delete',{cookie:a,data:{}});
+  assert.equal((await getPhoto('photos/comment/'+photoComment)).status,404);
+  assert.equal(db.prepare('SELECT bytes FROM photo_budget WHERE id=1').get().bytes,0);
   await req('posts',{overrides:{DB:null},status:503});
   console.log('SQLite persistente, dos sesiones, debate, configuración, comentarios, votos, denuncias, moderación y fallos: OK');
 }finally{

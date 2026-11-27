@@ -14,7 +14,35 @@ const reasons=['spam','insultos','acoso','ilegal','datos personales','enlaces pe
 const statuses=['public','pending','hidden','deleted'];
 const limit=20;
 
-async function body(request){
+const photoLimit=150000;
+function imageBytes(value){
+  if(typeof value!=='string'||value.length>200000||value.length<44||!(/^[A-Za-z0-9+/]+={0,2}$/).test(value)||value.length%4!==0)error('Imagen inválida o demasiado grande.');
+  let bytes;
+  try{bytes=Uint8Array.from(atob(value),c=>c.charCodeAt(0));}catch{error('Imagen inválida.');}
+  if(bytes.length>photoLimit||bytes.length<32)error('Imagen inválida o demasiado grande.');
+  const view=new DataView(bytes.buffer);
+  const tag=offset=>String.fromCharCode(...bytes.slice(offset,offset+4));
+  const size=view.getUint32(16,true);
+  if(tag(0)!=='RIFF'||tag(8)!=='WEBP'||view.getUint32(4,true)!==bytes.length-8||20+size+(size%2)!==bytes.length)error('Solo se admiten imágenes WebP sin metadatos.');
+  let width,height;
+  if(tag(12)==='VP8 '&&size>=10&&(bytes[20]&1)===0&&bytes[23]===157&&bytes[24]===1&&bytes[25]===42){
+    width=view.getUint16(26,true)&16383;height=view.getUint16(28,true)&16383;
+  }else if(tag(12)==='VP8L'&&size>=5&&bytes[20]===47){
+    const bits=view.getUint32(21,true);width=(bits&16383)+1;height=((bits>>>14)&16383)+1;
+    if(bits>>>29)error('Imagen inválida.');
+  }else error('Solo se admiten imágenes estáticas WebP sin metadatos.');
+  if(!width||!height||width>1600||height>1600)error('La imagen supera la resolución permitida.');
+  return bytes;
+}
+function photosOf(data,max){
+  if(data.photos===undefined)return undefined;
+  if(!Array.isArray(data.photos)||data.photos.length>max)error('Demasiadas imágenes.');
+  data.photos.forEach(imageBytes);
+  return JSON.stringify(data.photos);
+}
+
+
+async function body(request,maxBytes=24576){
   if(request.headers.get('content-type')?.split(';')[0]!=='application/json')error('Formato no admitido.',415);
   const reader=request.body?.getReader();
   if(!reader)error('Faltan datos.');
@@ -24,7 +52,7 @@ async function body(request){
     const chunk=await reader.read();
     if(chunk.done)break;
     size+=chunk.value.byteLength;
-    if(size>24576){await reader.cancel();error('Solicitud demasiado grande.',413);}
+    if(size>maxBytes){await reader.cancel();error('Solicitud demasiado grande.',413);}
     value+=decoder.decode(chunk.value,{stream:true});
   }
   try{
@@ -59,6 +87,7 @@ export async function onRequest({request,env}){
   try{return await route(request,env);}
   catch(e){
     if(e.status)return json({error:e.message},e.status);
+    if(/photo_budget_exceeded/.test(String(e)))return json({error:'Se ha alcanzado el límite de almacenamiento de imágenes. Puedes publicar sin fotos.'},507);
     if(/UNIQUE constraint/i.test(String(e)))return json({error:'Ese nombre o registro ya está reservado. Elige otro o actualiza la página.'},409);
     return json({error:'Servicio temporalmente no disponible. Inténtalo más tarde.'},503);
   }
@@ -88,16 +117,30 @@ async function route(request,env){
     const row=await first('INSERT INTO rate VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET hits=hits+1 WHERE hits<? RETURNING hits',key+':'+expires,expires,max);
     if(!row)error('Has alcanzado el límite. Inténtalo más tarde.',429);
   };
+  if(resource==='photos'&&method==='GET'){
+    const target=positive(action), index=Number(query.get('index')||0);
+    if(!['post','comment'].includes(id)||!target||!Number.isInteger(index)||index<0||index>=3)error('Imagen no disponible.',404);
+    const isAdmin=!!request.headers.get('Authorization');
+    if(isAdmin)await admin(request,env);
+    const allowed=id==='post'?
+      "SELECT p.photos FROM posts p JOIN categories k ON k.id=p.category WHERE p.id=? AND p.status<>'deleted' AND (?=1 OR (k.hidden=0 AND (p.status='public' OR (p.owner=? AND p.status='pending'))))":
+      "SELECT c.photos FROM comments c JOIN posts p ON p.id=c.post JOIN categories k ON k.id=p.category WHERE c.id=? AND c.status<>'deleted' AND p.status<>'deleted' AND (?=1 OR (k.hidden=0 AND p.status='public' AND (c.status='public' OR (c.owner=? AND c.status='pending'))))";
+    const row=await first(allowed,target,+isAdmin,who?.id??null);
+    const value=row&&JSON.parse(row.photos)[index];
+    if(!value)error('Imagen no disponible.',404);
+    return new Response(imageBytes(value),{headers:{'Content-Type':'image/webp','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox",'Content-Disposition':'inline; filename="imagen.webp"'}});
+  }
   if(resource==='admin'){
     await admin(request,env);
     if(method==='GET'){
       const tables=['posts','comments','reports','audit','categories','settings'];
+      const fields=table=>table==='posts'?'id,owner,category,title,body,game,tags,config,debate,status,closed,pinned,score,replies,hash,created,views,json_array_length(photos) AS photoCount':table==='comments'?'id,post,parent,depth,owner,body,status,score,created,json_array_length(photos) AS photoCount':'*';
       if(id==='export'){
         const table=query.get('table');
         if(![...tables,'sessions','votes','notices'].includes(table))error('Tabla no válida.');
-        return json({rows:await all('SELECT rowid AS cursor,* FROM '+table+' WHERE rowid>? ORDER BY rowid LIMIT 200',positive(query.get('after'))||0)});
+        return json({rows:await all('SELECT rowid AS cursor,'+fields(table)+' FROM '+table+' WHERE rowid>? ORDER BY rowid LIMIT 200',positive(query.get('after'))||0)});
       }
-      return json(Object.fromEntries(await Promise.all(tables.map(async table=>[table,await all('SELECT * FROM '+table+' ORDER BY id DESC LIMIT 50')]))));
+      return json(Object.fromEntries(await Promise.all(tables.map(async table=>[table,await all('SELECT '+fields(table)+' FROM '+table+' ORDER BY id DESC LIMIT 50')]))));
     }
     const data=await body(request), target=positive(data.id);
     let statement,notice;
@@ -121,7 +164,7 @@ async function route(request,env){
       const table=id==='post'?'posts':'comments';
       const record=await first('SELECT * FROM '+table+' WHERE id=?',target);
       if(!record)error('Contenido no encontrado.',404);
-      if(data.status==='deleted')statement=sql("UPDATE "+table+" SET status='deleted',body=''"+(id==='post'?",title='[Publicación eliminada]',tags='[]',config=NULL":"")+' WHERE id=?',target);
+      if(data.status==='deleted')statement=sql("UPDATE "+table+" SET status='deleted',body='',photos='[]'"+(id==='post'?",title='[Publicación eliminada]',tags='[]',config=NULL":"")+' WHERE id=?',target);
       else if(statuses.slice(0,3).includes(data.status)&&record.status!=='deleted')
         statement=sql('UPDATE '+table+' SET status=? WHERE id=?',data.status,target);
       else if(id==='post'&&record.status!=='deleted'){
@@ -288,7 +331,7 @@ async function route(request,env){
     return response;
   }
   if(resource==='posts'&&method==='GET'){
-    const projection=`p.id,p.category,c.name AS categoryName,p.title,p.game,p.tags,p.config,p.debate,p.created,p.score,p.replies,p.views,p.pinned,p.closed,p.owner=? AS own,(SELECT username FROM profiles WHERE owner=p.owner) AS username,(SELECT role FROM profiles WHERE owner=p.owner) AS role,
+    const projection=`p.id,p.category,c.name AS categoryName,p.title,p.game,p.tags,p.config,p.debate,p.created,p.score,p.replies,p.views,p.pinned,p.closed,json_array_length(p.photos) AS photoCount,p.owner=? AS own,(SELECT username FROM profiles WHERE owner=p.owner) AS username,(SELECT role FROM profiles WHERE owner=p.owner) AS role,
       coalesce((SELECT value FROM votes WHERE owner=? AND kind='post' AND target=p.id),0) AS vote,
        (SELECT count(*) FROM votes WHERE kind='post' AND target=p.id AND value=1) AS likes`;
     if(id){
@@ -321,9 +364,9 @@ async function route(request,env){
     if(visible.length){
       const ids=visible.map(post=>post.id);
       const placeholders=ids.map(()=>'?').join(',');
-      const recent=await all(`SELECT id,post,body,bodyLength,created,username,role FROM (
+      const recent=await all(`SELECT id,post,body,bodyLength,created,username,role,photoCount FROM (
         SELECT cm.id,cm.post,substr(cm.body,1,601) AS body,
-          length(cm.body) AS bodyLength,cm.created,pr.username,pr.role,
+          length(cm.body) AS bodyLength,cm.created,pr.username,pr.role,json_array_length(cm.photos) AS photoCount,
           row_number() OVER (PARTITION BY cm.post ORDER BY cm.created DESC,cm.id DESC) AS position
         FROM comments cm LEFT JOIN profiles pr ON pr.owner=cm.owner
         WHERE cm.status='public' AND cm.post IN (${placeholders})
@@ -338,7 +381,7 @@ async function route(request,env){
     const sort=query.get('sort')==='popular'?'c.score':'c.id';
     const cursor=(query.get('after')||'').match(/^(-?\d{1,15}):(\d{1,15})$/);
     const rows=await all(`SELECT c.id,c.post,c.parent,c.depth,c.created,c.status,CASE WHEN c.status='public' THEN c.body ELSE '' END AS body,
-      c.score,c.owner=? AS own,c.owner=p.owner AS author,(SELECT username FROM profiles WHERE owner=c.owner) AS username,(SELECT role FROM profiles WHERE owner=c.owner) AS role,${sort} AS ranking,
+      c.score,CASE WHEN c.status='public' THEN json_array_length(c.photos) ELSE 0 END AS photoCount,c.owner=? AS own,c.owner=p.owner AS author,(SELECT username FROM profiles WHERE owner=c.owner) AS username,(SELECT role FROM profiles WHERE owner=c.owner) AS role,${sort} AS ranking,
       EXISTS(SELECT 1 FROM comments child WHERE child.parent=c.id AND child.status IN ('public','deleted')) AS children,
       coalesce((SELECT value FROM votes WHERE owner=? AND kind='comment' AND target=c.id),0) AS vote,
       (SELECT count(*) FROM votes WHERE kind='comment' AND target=c.id AND value=1) AS likes
@@ -352,12 +395,14 @@ async function route(request,env){
   if(!who)error('Verifica la sesión anónima para participar.',401);
   if(who.blocked_until>timestamp)error('Esta sesión está restringida.',403);
   if(!who.username)error('Elige tu nombre de usuario para participar.',403);
-  const data=await body(request), settings=await first('SELECT * FROM settings WHERE id=1');
+  const supportsPhotos=['posts','comments'].includes(resource)&&(!id||action==='edit');
+  const data=await body(request,supportsPhotos?650000:24576), settings=await first('SELECT * FROM settings WHERE id=1');
   if(!settings||settings.readonly)error('La comunidad está en modo de solo lectura.',403);
   const target=positive(id);
   if(resource==='posts'&&!id){
     if(settings.stop_posts)error('Las publicaciones nuevas están temporalmente desactivadas.',403);
-    const title=field(data.title,150,4), content=field(data.body,5000,4), category=positive(data.category);
+    const photos=photosOf(data,3)??'[]';
+    const title=field(data.title,150,4), content=field(data.body,5000,photos==='[]'?4:0), category=positive(data.category);
     if(!await first('SELECT id FROM categories WHERE id=? AND hidden=0',category))error('Categoría no disponible.');
     const game=gameId(data.game), debate=+!!data.debate;
     if((data.game||debate||data.config)&&!game)error('Identificador de juego no válido.');
@@ -374,22 +419,23 @@ async function route(request,env){
     await throttle('p:'+owner,5,3600);
     const hash=await digest((title+'\n'+content).normalize('NFC').toLowerCase().replace(/\s+/g,' '));
     const status=settings.review?'pending':'public';
-    const row=await first(`INSERT INTO posts(owner,category,title,body,game,tags,config,debate,status,hash,created)
-      SELECT ?,?,?,?,?,?,?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM posts WHERE owner=? AND hash=? AND created>?) RETURNING id`,
-      owner,category,title,content,game,JSON.stringify(tags),config?JSON.stringify(config):null,debate,status,hash,timestamp,owner,hash,timestamp-86400);
+    const row=await first(`INSERT INTO posts(owner,category,title,body,game,tags,config,debate,status,hash,created,photos)
+      SELECT ?,?,?,?,?,?,?,?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM posts WHERE owner=? AND hash=? AND created>?) RETURNING id`,
+      owner,category,title,content,game,JSON.stringify(tags),config?JSON.stringify(config):null,debate,status,hash,timestamp,photos,owner,hash,timestamp-86400);
     if(!row)error('Ya has publicado ese contenido recientemente.',409);
     return json({...row,status},201);
   }
   if(resource==='comments'&&!id){
     await throttle('c:'+owner,20,600);
-    const post=positive(data.post), parent=positive(data.parent), content=field(data.body,2000,2);
+    const photos=photosOf(data,2)??'[]';
+    const post=positive(data.post), parent=positive(data.parent), content=field(data.body,2000,photos==='[]'?2:0);
     const status=settings.review?'pending':'public';
-    const row=await first(`INSERT INTO comments(post,parent,depth,owner,body,status,created)
-      SELECT p.id,?,coalesce(c.depth+1,0),?,?,?,? FROM posts p
+    const row=await first(`INSERT INTO comments(post,parent,depth,owner,body,status,created,photos)
+      SELECT p.id,?,coalesce(c.depth+1,0),?,?,?,?,? FROM posts p
       JOIN categories k ON k.id=p.category LEFT JOIN comments c ON c.id=? AND c.post=p.id AND c.status IN ('public','deleted') AND c.depth<3
       WHERE p.id=? AND p.status='public' AND p.closed=0 AND k.hidden=0 AND (? IS NULL OR c.id IS NOT NULL)
       AND NOT EXISTS(SELECT 1 FROM comments d WHERE d.owner=? AND d.post=p.id AND d.body=? AND d.created>?) RETURNING id`,
-      parent,owner,content,status,timestamp,parent,post,parent,owner,content,timestamp-600);
+      parent,owner,content,status,timestamp,photos,parent,post,parent,owner,content,timestamp-600);
     if(!row)error('El debate está cerrado, la respuesta está duplicada o el hilo alcanzó el límite.',409);
     return json({...row,status},201);
   }
@@ -397,9 +443,12 @@ async function route(request,env){
     await throttle('edit:'+owner,20,600);
     const table=resource, max=table==='posts'?5000:2000;
     const removal=action==='delete';
-    const fields=removal?"body='',status='deleted'"+(table==='posts'?",title='[Publicación eliminada]',tags='[]',config=NULL":""):
-      'body=?'+(table==='posts'?',title=?':'')+(settings.review?",status='pending'":"");
-    const args=removal?[]:[field(data.body,max,2),...(table==='posts'?[field(data.title,150,4)]:[])];
+    const photos=removal?undefined:photosOf(data,table==='posts'?3:2);
+    const existing=removal||photos!==undefined?null:await first('SELECT json_array_length(photos) AS n FROM '+table+' WHERE id=? AND owner=?',target,owner);
+    const hasPhotos=photos!==undefined?photos!=='[]':!!existing?.n;
+    const fields=removal?"body='',status='deleted',photos='[]'"+(table==='posts'?",title='[Publicación eliminada]',tags='[]',config=NULL":""):
+      'body=?'+(table==='posts'?',title=?':'')+(photos!==undefined?',photos=?':'')+(settings.review?",status='pending'":"");
+    const args=removal?[]:[field(data.body,max,hasPhotos?0:2),...(table==='posts'?[field(data.title,150,4)]:[]),...(photos!==undefined?[photos]:[])];
     if(!await first('UPDATE '+table+' SET '+fields+" WHERE id=? AND owner=? AND status IN ('public','pending') RETURNING id",...args,target,owner))error('Contenido propio no disponible.',404);
     return json({ok:true});
   }

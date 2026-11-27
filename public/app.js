@@ -193,6 +193,82 @@ async function showProfile(){
   });
   button(content,'Cerrar sesión',async()=>{if(!confirm('Asegúrate de tener guardado el código de recuperación. ¿Cerrar sesión?'))return;await api('profile/logout',{});location.reload();});
 }
+
+function photoUrl(kind,id,index){return '/api/photos/'+kind+'/'+id+'?index='+index;}
+function renderPhotos(parent,item,kind,compact=false){
+  const count=Math.min(kind==='post'?3:2,Number(item.photoCount)||0);
+  if(!count)return;
+  const gallery=el('div',undefined,parent);gallery.className='photo-gallery'+(compact?' compact':'');
+  for(let i=0;i<count;i++){
+    const a=link(gallery,'',photoUrl(kind,item.id,i));a.target='_blank';a.rel='noopener noreferrer';
+    const img=el('img',undefined,a);img.src=a.href;img.alt='Foto '+(i+1)+' adjunta';img.loading='lazy';img.decoding='async';
+  }
+}
+async function compressPhoto(file){
+  if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>15000000)throw Error('Selecciona una foto JPG, PNG o WebP de hasta 15 MB.');
+  const bitmap=await createImageBitmap(file);
+  try{
+    if(!bitmap.width||!bitmap.height||bitmap.width*bitmap.height>50000000)throw Error('Imagen demasiado grande.');
+    const canvas=document.createElement('canvas'), ctx=canvas.getContext('2d',{alpha:false});
+    if(!ctx)throw Error('No se puede procesar la imagen.');
+    for(const max of [1600,1280,960,720,480]){
+      const scale=Math.min(1,max/Math.max(bitmap.width,bitmap.height));
+      canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+      ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
+      for(const quality of [.84,.70,.54,.40]){
+        const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/webp',quality));
+        if(blob&&blob.type==='image/webp'&&blob.size<=150000)return blob;
+      }
+    }
+    throw Error('No se ha podido comprimir la imagen.');
+  }finally{bitmap.close();}
+}
+async function encodePhoto(blob){
+  const bytes=new Uint8Array(await blob.arrayBuffer());let text='';
+  for(let i=0;i<bytes.length;i+=8192)text+=String.fromCharCode(...bytes.subarray(i,i+8192));
+  return btoa(text);
+}
+function photoEditor(form,existing,kind){
+  const max=kind==='post'?3:2;
+  const box=el('div',undefined,form);box.className='photo-editor';
+  el('strong','📷 Adjuntar fotos',box);
+  el('small','Hasta '+max+' imágenes JPG, PNG o WebP. Se comprimen y se eliminan los metadatos del archivo original. Revisa que la foto no muestre datos privados.',box);
+  const gallery=el('div',undefined,box);gallery.className='photo-gallery';
+  const picker=el('input',undefined,el('label','Seleccionar fotos',box));picker.type='file';picker.accept='image/jpeg,image/png,image/webp';picker.multiple=true;
+  const entries=Array.from({length:Math.min(max,Number(existing?.photoCount)||0)},(_,index)=>({index,url:photoUrl(kind,existing.id,index)}));
+  let busy=false,changed=false;
+  const feedback=el('small','',box);feedback.setAttribute('role','status');
+  const cleanup=()=>{for(const entry of entries)if(entry.blob)URL.revokeObjectURL(entry.url);};
+  modal.addEventListener('close',cleanup,{once:true});
+  function refresh(){
+    gallery.replaceChildren();
+    for(const entry of entries){
+      const wrap=el('div',undefined,gallery),img=el('img',undefined,wrap);img.src=entry.url;img.alt='Vista previa de foto';
+      button(wrap,'Quitar foto',()=>{if(busy)return;if(entry.blob)URL.revokeObjectURL(entry.url);entries.splice(entries.indexOf(entry),1);changed=true;refresh();});
+    }
+    picker.disabled=busy||entries.length>=max;
+    feedback.textContent=entries.length+' de '+max+' fotos';
+  }
+  picker.onchange=async()=>{
+    if(busy)return;busy=true;picker.disabled=true;const files=Array.from(picker.files||[]);picker.value='';
+    let failure='';
+    try{
+      if(files.length+entries.length>max)throw Error('Solo se admiten '+max+' fotos.');
+      for(const file of files){const blob=await compressPhoto(file);if(!box.isConnected)break;entries.push({blob,url:URL.createObjectURL(blob)});changed=true;}
+    }catch(error){failure=error.message;}finally{busy=false;refresh();if(failure)feedback.textContent=failure;}
+  };
+  refresh();
+  return {count:()=>entries.length,async values(){
+    if(busy)throw Error('Espera a que terminen de prepararse las fotos.');
+    if(existing&&!changed)return undefined;
+    return Promise.all(entries.map(async entry=>{
+      if(entry.blob)return encodePhoto(entry.blob);
+      const response=await fetch(entry.url);if(!response.ok)throw Error('No se pudo conservar una de las fotos existentes.');
+      return encodePhoto(await response.blob());
+    }));
+  }};
+}
+
 function editor({post,debate=false,shared=false,comment,replyTo}={}){
   open(comment?'Editar comentario':replyTo?'Responder':post?'Editar publicación':shared?'Compartir mi configuración':debate?'Iniciar debate':'Crear publicación');
   const f=el('form',undefined,content);f.className='stack';
@@ -209,8 +285,9 @@ function editor({post,debate=false,shared=false,comment,replyTo}={}){
       for(const [key,label] of Object.entries(labels))input(sharedBox,label,'cfg-'+key,{max:500,value:shared?params.get(key)?.slice(0,500):''});
     }
   }
-  const body=input(f,'Contenido','body',{max:isComment?2000:5000,multiline:true,required:true,value:post?.body||comment?.body});
+  const body=input(f,'Contenido','body',{max:isComment?2000:5000,multiline:true,required:false,value:post?.body||comment?.body});
   el('small','Formato básico con **negrita**, código y enlaces Markdown HTTPS.',f);
+  const attachments=photoEditor(f,comment||post,isComment?'comment':'post');
   const preview=el('div',undefined,f);
   button(f,'Vista previa',()=>{preview.replaceChildren();renderText(preview,body.value);});
   const submit=el('button',post||comment?'Guardar':'Publicar',f);submit.className='primary';
@@ -221,13 +298,15 @@ function editor({post,debate=false,shared=false,comment,replyTo}={}){
     void attempt(async()=>{
       try{
         const data=Object.fromEntries(new FormData(f));
+        const photos=await attachments.values();
+        if(!data.body.trim()&&!attachments.count())throw Error('Escribe un mensaje o adjunta una foto.');
         let result;
-        if(comment)await api('comments/'+comment.id+'/edit',{body:data.body});
-        else if(replyTo)result=await api('comments',{body:data.body,post:replyTo.post,parent:replyTo.id});
-        else if(post)await api('posts/'+post.id+'/edit',{title:data.title,body:data.body});
+        if(comment)await api('comments/'+comment.id+'/edit',{body:data.body,photos});
+        else if(replyTo)result=await api('comments',{body:data.body,post:replyTo.post,parent:replyTo.id,photos});
+        else if(post)await api('posts/'+post.id+'/edit',{title:data.title,body:data.body,photos});
         else{
           const config=Object.fromEntries(Object.keys(labels).filter(key=>data['cfg-'+key]?.trim()).map(key=>[key,data['cfg-'+key]]));
-          result=await api('posts',{title:data.title,body:data.body,category:data.category,game:data.game,debate,tags:data.tags.split(',').map(v=>v.trim()).filter(Boolean),config:Object.keys(config).length?config:null});
+          result=await api('posts',{title:data.title,body:data.body,category:data.category,game:data.game,debate,photos,tags:data.tags.split(',').map(v=>v.trim()).filter(Boolean),config:Object.keys(config).length?config:null});
         }
         modal.close();
         if(!isComment&&!post&&result?.id){location.href='/?post='+result.id;return;}
@@ -364,6 +443,7 @@ function renderRecentComments(parent,post){
     const trimmed=fullLength>185;
     const textNode=el('p',trimmed?excerpt+'…':text,block);
     textNode.className='recent-comment-text';
+    renderPhotos(block,comment,'comment',true);
 
     if(fullLength>600){
       const full=link(block,'Leer comentario completo en el post','/?post='+post.id);
@@ -388,7 +468,7 @@ function card(parent,item,detail=false){
   const heading=el(detail?'h1':'h2',undefined,info);
   if(detail)heading.textContent=item.title;
   else link(heading,item.title,'/?post='+item.id);
-  renderText(info,item.body);
+  renderText(info,item.body);renderPhotos(info,item,'post',!detail);
   if(item.game)link(info,detail?'Ver ficha del juego en Ally Lab':'Ficha del juego',gameLink(item.game));
   if(item.config){
     el('p','Configuración de la comunidad · FPS comunicados por el usuario',info);
@@ -422,7 +502,7 @@ async function comments(parent,post,parentId,sort,after){
     const article=el('article',undefined,parent);article.className='comment';
     if(item.status==='deleted')el('p','[Comentario eliminado]',article);
     else{
-      describe(article,item);renderText(article,item.body);votes(article,item,'comment');
+      describe(article,item);renderText(article,item.body);renderPhotos(article,item,'comment');votes(article,item,'comment');
       const controls=actions(article,item,'comment');
       if(item.depth<3)button(controls,'Responder',()=>session(()=>editor({replyTo:item})));
     }
