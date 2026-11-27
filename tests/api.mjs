@@ -15,6 +15,7 @@ db.exec(readFileSync(new URL('../migrations/0004_post_unique_views.sql',import.m
 db.exec(readFileSync(new URL('../migrations/0005_device_access.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0006_recent_comments_index.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0007_photos.sql',import.meta.url),'utf8'));
+db.exec(readFileSync(new URL('../migrations/0008_admin_notifications.sql',import.meta.url),'utf8'));
 const env={
   TURNSTILE_SITE_KEY:'test-site-key',TURNSTILE_SECRET:'test-secret',
   RATE_SECRET:'r'.repeat(64),ADMIN_TOKEN:'a'.repeat(64),
@@ -245,6 +246,21 @@ try{
   await req('comments/'+photoComment+'/delete',{cookie:a,data:{}});
   assert.equal((await getPhoto('photos/comment/'+photoComment)).status,404);
   assert.equal(db.prepare('SELECT bytes FROM photo_budget WHERE id=1').get().bytes,0);
+  // Solo el perfil admin autenticado puede leer y marcar sus informes.
+  const adminOwner=db.prepare("SELECT owner FROM profiles WHERE role='admin'").get().owner;
+  db.prepare('INSERT INTO admin_notifications(owner,delivery_key,title,message) VALUES(?,?,?,?)').run(adminOwner,'test-log','Informe privado','Caso de prueba');
+  await req('admin-notices',{status:403});
+  await req('admin-notices',{cookie:b,status:403});
+  await req('admin-notices?count=1',{cookie:b,status:403});
+  const adminLogs=(await req('admin-notices',{cookie:a})).result;
+  assert.equal(adminLogs.rows.length,1);assert.equal(adminLogs.rows[0].title,'Informe privado');assert.equal(adminLogs.unread,1);
+  assert.equal((await req('admin-notices?count=1',{cookie:a})).result.unread,1);
+  await req('admin-notices/read',{cookie:b,data:{through:adminLogs.rows[0].id},status:403});
+  await req('admin-notices/read',{cookie:a,origin:'https://third-party.test',data:{through:adminLogs.rows[0].id},status:403});
+  assert.equal((await req('admin-notices/read',{cookie:a,data:{through:adminLogs.rows[0].id}})).result.unread,0);
+  assert.equal((await req('admin-notices',{cookie:a})).result.rows.length,1);
+  assert.ok((await req('admin-notices',{cookie:a})).result.rows[0].read_at);
+  assert.ok(!(await req('notices',{cookie:b})).result.rows.some(x=>x.message==='Caso de prueba'));
   await req('posts',{overrides:{DB:null},status:503});
   console.log('SQLite persistente, dos sesiones, debate, configuración, comentarios, votos, denuncias, moderación y fallos: OK');
 }finally{

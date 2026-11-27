@@ -65,3 +65,6 @@ Los controles permiten gestionar categorías y denuncias, ocultar, eliminar, apr
 
 ## Fotos adjuntas
 Hasta 3 fotos por publicación y 2 por comentario. El navegador reduce a 1600 px y 150 KB por imagen WebP; la API verifica contenedor y dimensiones y rechaza bloques adicionales. La migración 0007 añade las columnas y un presupuesto global de 100 MB de datos codificados; no activa R2 ni servicios de pago. Las imágenes se sirven bajo las mismas restricciones de visibilidad que su contenido y se vacían al eliminarlo. Aplica la migración antes de publicar el código; las exportaciones JSON del panel incluyen el número de fotos, no su contenido. Las copias D1 completas sí incluyen las fotos.
+
+## Informes privados de moderación
+La migración 0008 crea admin_notifications. La tarea de moderación escribe informes con una clave de entrega idempotente y destinatario resuelto por el rol admin único. El endpoint /api/admin-notices comprueba la sesión y el rol admin, además del owner, y no devuelve informes a visitantes ni miembros. Notificaciones muestra historial, contador y marcado de lectura. La bandeja no concede permisos para suspender cuentas. No contiene credenciales ni datos privados del titular.

@@ -102,6 +102,7 @@ function updateProfile(){
   node.classList.toggle('admin-profile',p?.role==='admin');
   node.setAttribute('aria-label',p?'Mi perfil: '+p.username:'Elegir nombre de usuario');
   $('#moderation').hidden=p?.role!=='admin';
+  if(p?.role==='admin')void refreshAdminNoticeCount();else setAdminNoticeCount(0);
 }
 async function refreshProfile(){meta=await api('meta');updateProfile();}
 function recoveryView(code,resume){
@@ -567,17 +568,75 @@ async function load(){
   sort.onchange=()=>attempt(async()=>{replies.replaceChildren();await comments(replies,post.id,null,sort.value);});
   await comments(replies,post.id,null,sort.value);
 }
+function setAdminNoticeCount(value){
+  const button=$('#notices');
+  if(!button)return;
+  let badge=button.querySelector('.admin-unread');
+  const count=Number(value)||0;
+  if(count<=0){
+    badge?.remove();button.removeAttribute('aria-label');return;
+  }
+  if(!badge){badge=el('span',undefined,button);badge.className='admin-unread';badge.setAttribute('aria-hidden','true');}
+  badge.textContent=count>99?'99+':String(count);
+  button.setAttribute('aria-label','Notificaciones: '+count+' avisos de administración sin leer');
+}
+async function refreshAdminNoticeCount(){
+  if(meta?.profile?.role!=='admin'||document.hidden)return;
+  try{const data=await api('admin-notices?count=1');if(meta?.profile?.role==='admin')setAdminNoticeCount(data.unread);}catch{}
+}
+async function showNoticeInbox(){
+  open('Notificaciones');
+  const target=el('section',undefined,content);
+  if(meta?.profile?.role==='admin'){
+    const admin=el('section',undefined,target);admin.className='admin-inbox';
+    const head=el('div',undefined,admin);head.className='admin-inbox-heading';
+    el('h3','Registro privado de administración',head);
+    el('p','Solo disponible para tu perfil de administrador. Los avisos de suspensión son propuestas y no se ejecutan sin tu autorización.',admin);
+    const list=el('div',undefined,admin);list.className='admin-inbox-list';
+    const controls=el('div',undefined,admin);controls.className='admin-inbox-controls';
+    let latest=0;
+    async function loadAdmin(before){
+      const data=await api('admin-notices'+(before?'?before='+encodeURIComponent(before):''));
+      if(!admin.isConnected)return;
+      setAdminNoticeCount(data.unread);
+      if(!before){list.replaceChildren();latest=data.rows[0]?.id||0;}
+      for(const row of data.rows){
+        const card=el('article',undefined,list);card.className='admin-log'+(row.read_at?'':' unread');
+        const label=el('small',row.read_at?'Leído':'Nuevo · Moderación',card);label.className='admin-log-label';
+        const date=el('time',new Date(row.created*1000).toLocaleString('es-ES',{timeZone:'Europe/Madrid'}),card);date.dateTime=new Date(row.created*1000).toISOString();
+        el('h4',row.title,card);
+        const body=el('div',row.message,card);body.className='admin-log-body';
+      }
+      if(!data.rows.length&&!before)el('p','No hay informes de moderación todavía.',list);
+      controls.replaceChildren();
+      if(data.unread&&latest)button(controls,'Marcar como leídos',async()=>{await api('admin-notices/read',{through:latest});await loadAdmin();});
+      if(data.next)button(controls,'Cargar informes anteriores',()=>loadAdmin(data.next));
+    }
+    try{await loadAdmin();}catch(e){if(admin.isConnected)el('p','No se ha podido cargar el registro privado. '+e.message,list);}
+  }
+  if(!target.isConnected)return;
+  const normal=el('section',undefined,target);normal.className='normal-inbox';
+  el('h3','Avisos de tu perfil',normal);
+  const data=await api('notices');
+  if(!normal.isConnected)return;
+  if(!data.rows.length)el('p','No hay avisos en esta sesión.',normal);
+  for(const item of data.rows){
+    const p=el('p',undefined,normal);p.className='profile-notice';
+    const stamp=el('small',new Date(item.created*1000).toLocaleString('es-ES'),p);
+    const message=el('span',item.message,p);
+    if(item.post>0)link(p,'Ver hilo','/?post='+item.post);
+  }
+}
 async function init(){
   meta=await api('meta');
   updateProfile();$('#profile').onclick=()=>attempt(showProfile);
   for(const c of meta.categories)el('option',c.name,form.elements.category).value=c.id;
   if(['recent','popular','trend','comments','views'].includes(params.get('sort')))form.elements.sort.value=params.get('sort');
   $('#create').onclick=()=>attempt(()=>session(()=>editor()));
-  $('#notices').onclick=()=>attempt(async()=>{
-    const data=await api('notices');open('Notificaciones');
-    if(!data.rows.length)el('p','No hay avisos en esta sesión.',content);
-    for(const item of data.rows){const p=el('p',undefined,content);link(p,item.message,'/?post='+item.post);}
-  });
+  $('#notices').onclick=()=>attempt(showNoticeInbox);
+  window.addEventListener('focus',()=>void refreshAdminNoticeCount());
+  document.addEventListener('visibilitychange',()=>void refreshAdminNoticeCount());
+  setInterval(()=>{if(meta?.profile?.role==='admin'&&!document.hidden)void refreshAdminNoticeCount();},60000);
   form.onsubmit=e=>{e.preventDefault();void attempt(()=>list());};
   $('#stats').addEventListener('toggle',()=>{
     const node=$('#stats div');

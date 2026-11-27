@@ -315,6 +315,25 @@ async function route(request,env){
     await run('INSERT INTO sessions(id,expires) VALUES(?,?)',await digest(key),timestamp+15552000);
     return json({ok:true},201,{'Set-Cookie':'__Host-ally_session='+key+'; Path=/; Max-Age=15552000; Secure; HttpOnly; SameSite=Lax'});
   }
+  if(resource==='admin-notices'){
+    if(who?.role!=='admin')error('Acceso reservado al administrador.',403);
+    if(method==='GET'&&!id){
+      const unread=await first('SELECT count(*) AS total FROM admin_notifications WHERE owner=? AND read_at IS NULL',owner);
+      if(query.get('count')==='1')return json({unread:Number(unread?.total)||0});
+      const before=positive(query.get('before'));
+      const rows=await all('SELECT id,title,message,created,read_at FROM admin_notifications WHERE owner=?'+(before?' AND id<?':'')+' ORDER BY id DESC LIMIT 26',owner,...(before?[before]:[]));
+      return json({rows:rows.slice(0,25),next:rows.length>25?rows[24].id:null,unread:Number(unread?.total)||0});
+    }
+    if(method==='POST'&&id==='read'&&!action){
+      const data=await body(request);
+      const through=positive(data.through);
+      if(!through)error('Aviso no válido.');
+      await run('UPDATE admin_notifications SET read_at=? WHERE owner=? AND id<=? AND read_at IS NULL',timestamp,owner,through);
+      const unread=await first('SELECT count(*) AS total FROM admin_notifications WHERE owner=? AND read_at IS NULL',owner);
+      return json({ok:true,unread:Number(unread?.total)||0});
+    }
+    error('Ruta no encontrada.',404);
+  }
   if(resource==='notices'&&method==='GET'){
     return json({rows:who?await all('SELECT id,post,message,created FROM notices WHERE owner=? ORDER BY id DESC LIMIT 30',owner):[]});
   }
