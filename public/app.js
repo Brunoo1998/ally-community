@@ -235,7 +235,7 @@ async function list(after){
   if(current!==generation)return;
   const target=$('#posts');
   if(!after)target.replaceChildren();
-  if(!rows.length&&!after){const empty=el('p','Todavía no hay publicaciones que coincidan.',target);empty.className='empty';const robot=el('img',undefined,empty);robot.src='/ally.webp';robot.alt='';robot.width=40;robot.height=44;}
+  if(!rows.length&&!after){const empty=el('p','Todavía no hay publicaciones que coincidan.',target);empty.className='empty';}
   rows.forEach(item=>card(target,item));
   if(next){
     const more=button(target,'Cargar más publicaciones',async()=>{await list(next);more.remove();});
