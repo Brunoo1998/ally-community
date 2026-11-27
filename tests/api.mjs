@@ -12,6 +12,7 @@ db.exec(readFileSync(new URL('../migrations/0001_initial.sql',import.meta.url),'
 db.exec(readFileSync(new URL('../migrations/0002_profiles.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0003_votes_likes_index.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0004_post_unique_views.sql',import.meta.url),'utf8'));
+db.exec(readFileSync(new URL('../migrations/0005_device_access.sql',import.meta.url),'utf8'));
 const env={
   TURNSTILE_SITE_KEY:'test-site-key',TURNSTILE_SECRET:'test-secret',
   RATE_SECRET:'r'.repeat(64),ADMIN_TOKEN:'a'.repeat(64),
@@ -70,6 +71,41 @@ try{
   const anonC=(await req('session',{data:{token:'local-test'},status:201})).cookie.split(';')[0];
   const recovery=await req('profile/recover',{cookie:anonC,data:{code:pa.result.recovery}});
   assert.equal((await req('meta',{cookie:recovery.cookie.split(';')[0]})).result.profile.username,'TestGamer');
+  // Un usuario ya identificado genera en su dispositivo una clave independiente
+  // del código de recuperación (que sigue funcionando).
+  assert.equal((await req('profile',{cookie:a})).result.deviceKeyEnabled,false);
+  await req('profile/device-key',{data:{},status:401});
+  await req('profile/device-key',{cookie:anonC,data:{},status:401});
+  const firstDeviceKey=(await req('profile/device-key',{cookie:a,data:{}})).result.key;
+  assert.match(firstDeviceKey,/^[a-f0-9]{64}$/);
+  assert.equal((await req('profile',{cookie:a})).result.deviceKeyEnabled,true);
+  const storedHash=db.prepare('SELECT device_key_hash FROM profiles WHERE username=?').get('TestGamer').device_key_hash;
+  assert.match(storedHash,/^[a-f0-9]{64}$/);
+  assert.notEqual(storedHash,firstDeviceKey);
+  const anonD=(await req('session',{data:{token:'local-test'},status:201})).cookie.split(';')[0];
+  await req('profile/device-login',{cookie:anonD,data:{username:'TestGamer',key:'f'.repeat(64)},status:401});
+  await req('profile/device-login',{cookie:anonD,data:{username:'NoExiste',key:firstDeviceKey},status:401});
+  await req('profile/device-login',{cookie:anonD,origin:'https://outside.test',data:{username:'TestGamer',key:firstDeviceKey},status:403});
+  const linked=await req('profile/device-login',{cookie:anonD,data:{username:'testgamer',key:firstDeviceKey}});
+  assert.match(linked.cookie,/Secure; HttpOnly; SameSite=Lax/);
+  const newDevice=linked.cookie.split(';')[0];
+  const linkedProfile=(await req('meta',{cookie:newDevice})).result.profile;
+  assert.equal(linkedProfile.username,'TestGamer');
+  assert.equal(linkedProfile.role,'admin');
+  // La clave puede renovarse: la antigua deja de funcionar, sin cerrar
+  // otras sesiones previamente abiertas ni eliminar publicaciones.
+  const secondDeviceKey=(await req('profile/device-key',{cookie:a,data:{}})).result.key;
+  assert.notEqual(secondDeviceKey,firstDeviceKey);
+  assert.equal((await req('meta',{cookie:newDevice})).result.profile.username,'TestGamer');
+  const anonE=(await req('session',{data:{token:'local-test'},status:201})).cookie.split(';')[0];
+  await req('profile/device-login',{cookie:anonE,data:{username:'TestGamer',key:firstDeviceKey},status:401});
+  const relinked=await req('profile/device-login',{cookie:anonE,data:{username:'TestGamer',key:secondDeviceKey}});
+  assert.equal((await req('meta',{cookie:relinked.cookie.split(';')[0]})).result.profile.role,'admin');
+  // El código de recuperación anterior no se modifica al crear la nueva clave.
+  const anonF=(await req('session',{data:{token:'local-test'},status:201})).cookie.split(';')[0];
+  const legacyRecovery=await req('profile/recover',{cookie:anonF,data:{code:pa.result.recovery}});
+  assert.equal((await req('meta',{cookie:legacyRecovery.cookie.split(';')[0]})).result.profile.username,'TestGamer');
+
   const draft={title:'Ajustes de Cyberpunk',category:4,body:'Prueba de rendimiento <i>literal</i>.',game:'cyberpunk-2077-rog-xbox-ally-x',config:{model:'Xbox ROG Ally X',resolution:'900p'}};
   await req('posts',{data:draft,status:401});
   await req('posts',{cookie:a,data:draft,origin:'https://irrelevant.test',status:403});
