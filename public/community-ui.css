@@ -235,3 +235,19 @@
 .forum-page .chat-compose textarea{resize:vertical;max-height:140px}
 .forum-page .private-chat [hidden]{display:none!important}
 @media(max-width:520px){.forum-page .chat-message{max-width:94%}.forum-page .friend-actions{width:100%}.forum-page .friend-actions button{flex:1 1 auto}.forum-page .chat-compose{flex-wrap:wrap}.forum-page .chat-compose button{flex:1 1 100%}}
+
+/* Independent account access: identity row above all navigation actions. */
+.forum-page .community-bar .top{display:flex;flex-direction:column;align-items:stretch;gap:.8rem}
+.forum-page .community-identity-row{display:flex;align-items:center;justify-content:space-between;gap:.8rem;min-width:0;width:100%}
+.forum-page .community-identity-row .community-brand{flex:1 1 0;min-width:0}
+.forum-page .community-identity-row .community-brand>span{min-width:0}
+.forum-page .community-account{flex:0 1 auto;min-width:0;max-width:48%;display:flex;justify-content:flex-end;align-items:center;margin-left:auto}
+.forum-page .community-account #profile{display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:.16rem;min-width:0;max-width:100%;padding:.46rem .7rem;border-radius:.72rem;min-height:44px;background:#1f192c;border-color:#68547f;text-align:right;font-size:.84rem;line-height:1.25;box-shadow:none}
+.forum-page .community-account #profile.admin-profile{background:#263527;color:#d9ffb6;border-color:#86b568}
+.forum-page .community-account .account-name{display:block;max-width:100%;white-space:normal;overflow-wrap:anywhere;word-break:normal;font-weight:750}
+.forum-page .community-account #profile .presence-badge{align-self:flex-end;margin:0;font-size:.69rem}
+.forum-page .community-nav{width:100%;justify-content:flex-end}
+.forum-page .community-nav>[hidden]{display:none!important}
+@media(min-width:761px){.forum-page .community-nav{display:flex;flex-wrap:wrap;justify-content:flex-end}}
+@media(max-width:760px){.forum-page .community-nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem}.forum-page .community-nav #create{grid-column:1/-1}.forum-page .community-nav:has(#moderation[hidden]) #notices{grid-column:1/-1}.forum-page .community-nav:has(#friends[hidden]) #notices{grid-column:auto}}
+@media(max-width:520px){.forum-page .community-bar .top{padding:.75rem 0;gap:.65rem}.forum-page .community-identity-row{gap:.5rem}.forum-page .community-identity-row .community-brand{gap:.45rem}.forum-page .community-identity-row .community-brand>img{width:36px;height:36px}.forum-page .community-identity-row .brand-name{font-size:.77rem;line-height:1.25;letter-spacing:.015em}.forum-page .community-identity-row .community-brand small{font-size:.64rem;line-height:1.25}.forum-page .community-account{max-width:46%}.forum-page .community-account #profile{font-size:.76rem;padding:.38rem .48rem}.forum-page .community-account #profile .presence-badge{font-size:.64rem}}

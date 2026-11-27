@@ -310,7 +310,8 @@ async function openChat(id,username){
 
 function updateProfile(){
   const p=meta.profile, node=$('#profile');
-  node.textContent=p?'@'+p.username:'Elegir nombre';
+  node.replaceChildren();
+  const accountName=el('span',p?'@'+p.username:'Elegir nombre',node);accountName.className='account-name';
   if(p)document.body.dataset.allyProfile=p.username;else delete document.body.dataset.allyProfile;
   node.classList.toggle('admin-profile',p?.role==='admin');
   node.setAttribute('aria-label',p?'Mi perfil: '+p.username:'Elegir nombre de usuario');
