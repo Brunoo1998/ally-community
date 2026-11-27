@@ -275,7 +275,7 @@ try{
   assert.equal(db.prepare('SELECT comment_id FROM ally_bot_replies WHERE target=?').get(botPost).comment_id,botRow.id);
   await req('admin/ally-bot',{cookie:b,data:{enabled:false},status:401});
   await req('admin/ally-bot',{key:env.ADMIN_TOKEN,data:{enabled:false}});
-  const otherPost=(await req('posts',{cookie:a,data:{category:2,title:'Otro tema para Ally',body:'Texto de prueba'},status:201})).result.id;
+  const otherPost=(await req('posts',{cookie:b,data:{category:2,title:'Otro tema para Ally',body:'Texto de prueba'},status:201})).result.id;
   assert.throws(()=>addBot.run(otherPost,otherPost,'Respuesta no autorizada'),/ally_reply_not_allowed/);
   await req('admin/ally-bot',{key:env.ADMIN_TOKEN,data:{enabled:true}});
   await req('posts',{overrides:{DB:null},status:503});
