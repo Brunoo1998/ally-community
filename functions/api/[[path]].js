@@ -132,6 +132,40 @@ async function route(request,env){
     await db.batch([statement,sql('INSERT INTO audit(action,target,created) VALUES(?,?,?)',id,String(target||data.owner||''),timestamp),...(notice?[notice]:[])]);
     return json({ok:true});
   }
+  if(resource==='visits'&&method==='POST'&&!id){
+    // Solo se cuentan lecturas reales de la vista de detalle; las listas y
+    // las peticiones GET no registran visitas.
+    const data=await body(request), post=positive(data.post);
+    if(!post)error('Publicación no válida.');
+    const exists=await first("SELECT p.views FROM posts p JOIN categories c ON c.id=p.category WHERE p.id=? AND p.status='public' AND c.hidden=0",post);
+    if(!exists)error('Publicación no disponible.',404);
+    const visitorCookie=request.headers.get('Cookie')?.match(/(?:^|;\\s*)__Host-ally_visitor=([a-f0-9]{64})(?=;|$)/)?.[1];
+    let newVisitor=null, headers={};
+    let viewer;
+    if(who?.username)viewer='profile:'+who.id;
+    else{
+      newVisitor=visitorCookie||token();
+      viewer='browser:'+await digest(newVisitor);
+      if(!visitorCookie)headers={'Set-Cookie':'__Host-ally_visitor='+newVisitor+'; Path=/; Max-Age=31536000; Secure; HttpOnly; SameSite=Lax'};
+    }
+    const seen=await first('SELECT 1 AS seen FROM post_views WHERE post=? AND viewer=?',post,viewer);
+    if(!seen){
+      // La IP solo participa en una cuota temporal de seguridad, nunca en
+      // el identificador de visita ni en la tabla post_views.
+      const ip=request.headers.get('CF-Connecting-IP');
+      if(!ip||!env.RATE_SECRET||env.RATE_SECRET.length<32)error('Contador temporalmente no disponible.',503);
+      const hour=Math.floor(timestamp/3600);
+      const encoder=new TextEncoder();
+      const key=await crypto.subtle.importKey('raw',encoder.encode(env.RATE_SECRET),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+      const fingerprint=await crypto.subtle.sign('HMAC',key,encoder.encode('view:'+hour+':'+ip));
+      const bucket=Array.from(new Uint8Array(fingerprint),v=>v.toString(16).padStart(2,'0')).join('');
+      await throttle('visits:'+bucket,300,3600);
+      await run('INSERT OR IGNORE INTO post_views(post,viewer,created) VALUES(?,?,?)',post,viewer,timestamp);
+      if(Math.random()<0.01)await run('DELETE FROM rate WHERE rowid IN (SELECT rowid FROM rate WHERE expires<? LIMIT 100)',timestamp);
+    }
+    const current=await first('SELECT views FROM posts WHERE id=?',post);
+    return json({views:current.views},200,headers);
+  }
   if(resource==='meta'&&method==='GET'){
     let headers={};
     if(who&&device&&device.expires<timestamp+12960000){
@@ -214,15 +248,16 @@ async function route(request,env){
     const cacheKey=new Request(url.origin+'/api/stats-snapshot');
     const cached=globalThis.caches?.default&&await caches.default.match(cacheKey);
     if(cached)return cached;
-    const totals=await first("SELECT count(*) AS posts,coalesce(sum(replies),0) AS comments,coalesce(sum(config IS NOT NULL),0) AS configurations,coalesce(sum(debate=1 AND created>=?),0) AS recentDebates FROM posts WHERE status='public' AND category IN (SELECT id FROM categories WHERE hidden=0)",timestamp-604800);
+    const totals=await first("SELECT count(*) AS posts,coalesce(sum(replies),0) AS comments,coalesce(sum(views),0) AS uniqueViews,coalesce(sum(config IS NOT NULL),0) AS configurations,coalesce(sum(debate=1 AND created>=?),0) AS recentDebates FROM posts WHERE status='public' AND category IN (SELECT id FROM categories WHERE hidden=0)",timestamp-604800);
     const categories=await all("SELECT c.name,count(*) AS total FROM posts p JOIN categories c ON c.id=p.category WHERE p.status='public' AND c.hidden=0 GROUP BY c.id ORDER BY total DESC LIMIT 5");
     const best=await all("SELECT id,title,score FROM posts WHERE status='public' AND category IN (SELECT id FROM categories WHERE hidden=0) ORDER BY score DESC,id DESC LIMIT 5");
-    const response=json({totals,categories,best},200,{'Cache-Control':'public, max-age=60, s-maxage=300'});
+    const mostVisited=await all("SELECT id,title,views FROM posts WHERE status='public' AND views>0 AND category IN (SELECT id FROM categories WHERE hidden=0) ORDER BY views DESC,id DESC LIMIT 5");
+    const response=json({totals,categories,best,mostVisited},200,{'Cache-Control':'public, max-age=60, s-maxage=300'});
     if(globalThis.caches?.default)await caches.default.put(cacheKey,response.clone()).catch(()=>{});
     return response;
   }
   if(resource==='posts'&&method==='GET'){
-    const projection=`p.id,p.category,c.name AS categoryName,p.title,p.game,p.tags,p.config,p.debate,p.created,p.score,p.replies,p.pinned,p.closed,p.owner=? AS own,(SELECT username FROM profiles WHERE owner=p.owner) AS username,(SELECT role FROM profiles WHERE owner=p.owner) AS role,
+    const projection=`p.id,p.category,c.name AS categoryName,p.title,p.game,p.tags,p.config,p.debate,p.created,p.score,p.replies,p.views,p.pinned,p.closed,p.owner=? AS own,(SELECT username FROM profiles WHERE owner=p.owner) AS username,(SELECT role FROM profiles WHERE owner=p.owner) AS role,
       coalesce((SELECT value FROM votes WHERE owner=? AND kind='post' AND target=p.id),0) AS vote,
        (SELECT count(*) FROM votes WHERE kind='post' AND target=p.id AND value=1) AS likes`;
     if(id){
@@ -232,8 +267,9 @@ async function route(request,env){
     }
     const search=(query.get('q')||'').slice(0,100).match(/[\p{L}\p{N}]+/gu)?.slice(0,8);
     const category=positive(query.get('category')), game=gameId(query.get('game'));
-    const orders={recent:'p.id',popular:'p.score',comments:'p.replies',trend:'(p.score+2*p.replies)'};
+    const orders={recent:'p.id',popular:'p.score',comments:'p.replies',trend:'(p.score+2*p.replies)',views:'p.views'};
     const sort=query.get('sort')||'recent', order=Object.hasOwn(orders,sort)?orders[sort]:orders.recent;
+    const pinRank=sort==='views'?'0':'p.pinned';
     const conditions=["p.status='public'","c.hidden=0"], values=[who?.id??null,who?.id??null];
     if(search?.length){conditions.push('p.id IN (SELECT rowid FROM post_search WHERE post_search MATCH ? LIMIT 200)');values.push(search.map(v=>'"'+v+'"*').join(' AND '));}
     if(category){conditions.push('p.category=?');values.push(category);}
@@ -241,12 +277,12 @@ async function route(request,env){
     if(sort==='trend'){conditions.push('p.created>=?');values.push(timestamp-604800);}
     const cursor=(query.get('after')||'').split(':');
     if(cursor.length===3&&cursor.every(v=>/^-?\d{1,15}$/.test(v))){
-      conditions.push('(p.pinned,'+order+',p.id)<(?,?,?)');values.push(...cursor.map(Number));
+      conditions.push('('+pinRank+','+order+',p.id)<(?,?,?)');values.push(...cursor.map(Number));
     }
-    const rows=await all('SELECT '+projection+',substr(p.body,1,320) AS body,'+order+' AS ranking FROM posts p JOIN categories c ON c.id=p.category WHERE '+conditions.join(' AND ')+' ORDER BY p.pinned DESC,ranking DESC,p.id DESC LIMIT '+(limit+1),...values);
+    const rows=await all('SELECT '+projection+',substr(p.body,1,320) AS body,'+order+' AS ranking FROM posts p JOIN categories c ON c.id=p.category WHERE '+conditions.join(' AND ')+' ORDER BY '+pinRank+' DESC,ranking DESC,p.id DESC LIMIT '+(limit+1),...values);
     const more=rows.length>limit;
     const visible=rows.slice(0,limit), last=visible.at(-1);
-    return json({rows:visible,next:more?[last.pinned,last.ranking,last.id].join(':'):null});
+    return json({rows:visible,next:more?[sort==='views'?0:last.pinned,last.ranking,last.id].join(':'):null});
   }
   if(resource==='comments'&&method==='GET'){
     const post=positive(query.get('post')), parent=positive(query.get('parent'));
