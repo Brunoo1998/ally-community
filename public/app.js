@@ -254,9 +254,9 @@ async function load(){
   if(!post.closed)button(thread,'Comentar',()=>session(()=>editor({replyTo:{post:post.id}})));
   else el('p','Debate cerrado.',thread);
   const sort=select(thread,'Orden de comentarios','comment-sort',[['recent','Recientes'],['popular','Populares']]);
-  const list=el('div',undefined,thread);
-  sort.onchange=()=>attempt(async()=>{list.replaceChildren();await comments(list,post.id,null,sort.value);});
-  await comments(list,post.id,null,sort.value);
+  const replies=el('div',undefined,thread);
+  sort.onchange=()=>attempt(async()=>{replies.replaceChildren();await comments(replies,post.id,null,sort.value);});
+  await comments(replies,post.id,null,sort.value);
 }
 async function init(){
   meta=await api('meta');
