@@ -229,7 +229,26 @@ function votes(parent,item,kind){
   }
   update();
 }
-function describe(parent,item){const row=el('small',undefined,parent);row.textContent=[item.pinned?'Fijada':null,item.categoryName,item.username?'@'+item.username:'Usuario anónimo',item.author?'Autor original':null,new Date(item.created*1000).toLocaleDateString('es-ES')].filter(Boolean).join(' · ');if(item.role==='admin'){const badge=el('span','ADMIN',row);badge.className='admin-badge';}}
+function describe(parent,item){
+  const row=el('small',undefined,parent);
+  const fields=[
+    item.pinned?'Fijada':null,
+    item.categoryName,
+    item.username?'@'+item.username:'Usuario anónimo',
+    item.author?'Autor original':null
+  ].filter(Boolean);
+  if(fields.length)row.append(document.createTextNode(fields.join(' · ')+' · '));
+  const created=new Date(item.created*1000);
+  const date=created.toLocaleDateString('es-ES');
+  const hour=created.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',hour12:false});
+  const timestamp=el('time',date+' · '+hour+' h',row);
+  timestamp.dateTime=created.toISOString();
+  timestamp.title='Fecha y hora de publicación según la zona horaria de tu dispositivo';
+  if(item.role==='admin'){
+    const badge=el('span','ADMIN',row);
+    badge.className='admin-badge';
+  }
+}
 function actions(parent,item,kind){
   const box=el('div',undefined,parent);box.className='actions';
   button(box,'Denunciar',()=>session(()=>{
