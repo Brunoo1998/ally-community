@@ -10,6 +10,7 @@ const filename=join(dir,'test.sqlite');
 let db=new DatabaseSync(filename);
 db.exec(readFileSync(new URL('../migrations/0001_initial.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0002_profiles.sql',import.meta.url),'utf8'));
+db.exec(readFileSync(new URL('../migrations/0003_votes_likes_index.sql',import.meta.url),'utf8'));
 const env={
   TURNSTILE_SITE_KEY:'test-site-key',TURNSTILE_SECRET:'test-secret',
   RATE_SECRET:'r'.repeat(64),ADMIN_TOKEN:'a'.repeat(64),
@@ -85,12 +86,28 @@ try{
   assert.equal((await req('comments?post='+post+'&parent='+comment)).result.rows[0].author,1);
   assert.equal((await req('notices',{cookie:b})).result.rows.length,1);
   await req('comments/'+comment+'/edit',{cookie:b,data:{body:'Comentario corregido'}});
+  assert.equal((await req('comments?post='+post,{cookie:a})).result.rows[0].likes,0);
+  await req('vote',{cookie:a,data:{kind:'comment',target:comment,value:1}});
+  assert.equal((await req('comments?post='+post,{cookie:a})).result.rows[0].likes,1);
+  await req('vote',{cookie:a,data:{kind:'comment',target:comment,value:0}});
+  assert.equal((await req('comments?post='+post,{cookie:a})).result.rows[0].likes,0);
   await req('comments/'+comment+'/delete',{cookie:b,data:{}});
   assert.equal((await req('comments?post='+post)).result.rows[0].status,'deleted');
-  for(const [value,score] of [[1,1],[1,1],[-1,-1],[0,0]]){
+  assert.equal((await req('posts/'+post)).result.likes,0);
+  assert.equal((await req('posts?')).result.rows[0].likes,0);
+  for(const [value,score,likes] of [[1,1,1],[1,1,1],[-1,-1,0],[0,0,0]]){
     await req('vote',{cookie:b,data:{kind:'post',target:post,value}});
-    assert.equal((await req('posts/'+post)).result.score,score);
+    const current=(await req('posts/'+post)).result;
+    assert.equal(current.score,score);
+    assert.equal(current.likes,likes);
   }
+  await req('vote',{cookie:a,data:{kind:'post',target:post,value:1}});
+  await req('vote',{cookie:b,data:{kind:'post',target:post,value:-1}});
+  assert.equal((await req('posts/'+post)).result.score,0);
+  assert.equal((await req('posts/'+post)).result.likes,1);
+  await req('vote',{cookie:a,data:{kind:'post',target:post,value:0}});
+  await req('vote',{cookie:b,data:{kind:'post',target:post,value:0}});
+  assert.equal((await req('posts/'+post)).result.likes,0);
   await req('report',{cookie:b,data:{kind:'post',target:post,reason:'spam'},status:201});
   await req('admin',{status:401});
   const admin=(await req('admin',{key:env.ADMIN_TOKEN})).result;
