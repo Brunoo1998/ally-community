@@ -337,6 +337,51 @@ async function recordView(post,element){
     // El contador es informativo: un fallo no debe bloquear el hilo.
   }
 }
+function renderRecentComments(parent,post){
+  const recent=Array.isArray(post.latestComments)?post.latestComments:[];
+  if(!recent.length)return;
+  const section=el('section',undefined,parent);section.className='recent-comments';
+  section.setAttribute('aria-label','Dos últimos comentarios de la publicación');
+  const header=el('div',undefined,section);header.className='recent-comments-head';
+  el('strong','💬 Últimos comentarios',header);
+  el('small',recent.length===1?'1 comentario reciente':'2 comentarios recientes',header);
+
+  for(const comment of recent){
+    const block=el('div',undefined,section);block.className='recent-comment';
+    const meta=el('div',undefined,block);meta.className='recent-comment-meta';
+    const author=el('strong',comment.username?'@'+comment.username:'Usuario anónimo',meta);
+    if(comment.role==='admin'){
+      const badge=el('span','ADMIN',meta);badge.className='admin-badge';
+    }
+    const created=new Date(comment.created*1000);
+    const date=created.toLocaleDateString('es-ES');
+    const hour=created.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',hour12:false});
+    const stamp=el('time',date+' · '+hour+' h',meta);stamp.dateTime=created.toISOString();
+    const text=String(comment.body||'');
+    const flattened=text.replace(/\s+/g,' ').trim();
+    const fullLength=Number(comment.bodyLength)||text.length;
+    const excerpt=flattened.slice(0,185).trimEnd();
+    const trimmed=fullLength>185;
+    const textNode=el('p',trimmed?excerpt+'…':text,block);
+    textNode.className='recent-comment-text';
+
+    if(fullLength>600){
+      const full=link(block,'Leer comentario completo en el post','/?post='+post.id);
+      full.className='recent-comment-link';
+    }else if(trimmed){
+      const expand=button(block,'Ver más',()=>{
+        const open=expand.getAttribute('aria-expanded')==='true';
+        textNode.textContent=open?excerpt+'…':text;
+        expand.textContent=open?'Ver menos':'Ver menos';
+        if(open)expand.textContent='Ver más';
+        expand.setAttribute('aria-expanded',String(!open));
+      });
+      expand.className='recent-comment-toggle';
+      expand.setAttribute('aria-expanded','false');
+      expand.setAttribute('aria-label','Mostrar u ocultar el comentario completo de '+(comment.username?'@'+comment.username:'Usuario anónimo'));
+    }
+  }
+}
 function card(parent,item,detail=false){
   const article=el('article',undefined,parent);article.className='card';
   const info=el('div',undefined,article);
@@ -364,6 +409,7 @@ function card(parent,item,detail=false){
   const views=el('span','👁 '+visitLabel(item.views),metrics);views.className='post-view-count';
   views.title='Visitas únicas aproximadas; un perfil o navegador se cuenta una vez';
   votes(info,item,'post');
+  if(!detail)renderRecentComments(info,item);
   if(detail)actions(info,item,'post');
   return views;
 }
