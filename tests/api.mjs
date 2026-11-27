@@ -311,6 +311,17 @@ try{
   await req('chat/'+incoming.id+'/send',{cookie:a,origin:'https://third-party.test',data:{body:'Hola'},status:403});
   const sent=(await req('chat/'+incoming.id+'/send',{cookie:a,data:{body:'Hola, amigo'},status:201})).result.id;
   assert.equal((await req('friends/summary',{cookie:b})).result.unread,1);
+  // A third, authenticated user cannot read, send or mark messages in this chat.
+  const thirdOwner='d'.repeat(64),thirdKey='c'.repeat(64);
+  const thirdCredential=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(thirdKey))),v=>v.toString(16).padStart(2,'0')).join('');
+  db.prepare('INSERT INTO sessions(id,expires) VALUES(?,?)').run(thirdOwner,253402300799);
+  db.prepare('INSERT INTO profiles(owner,username,recovery_hash,created) VALUES(?,?,?,?)').run(thirdOwner,'ThirdGamer','e'.repeat(64),Math.floor(Date.now()/1000));
+  db.prepare('INSERT INTO profile_devices(id,owner,expires) VALUES(?,?,?)').run(thirdCredential,thirdOwner,253402300799);
+  const thirdCookie='__Host-ally_session='+thirdKey;
+  await req('chat/'+incoming.id,{cookie:thirdCookie,status:404});
+  await req('chat/'+incoming.id+'/send',{cookie:thirdCookie,data:{body:'Intruso'},status:404});
+  await req('chat/'+incoming.id+'/read',{cookie:thirdCookie,data:{through:sent},status:404});
+  await req('chat/'+incoming.id,{cookie:thirdCookie,key:env.ADMIN_TOKEN,status:404});
   const received=(await req('chat/'+incoming.id,{cookie:b})).result.rows[0];
   assert.equal(received.body,'Hola, amigo');assert.equal(received.own,0);
   assert.ok(!('sender' in received));

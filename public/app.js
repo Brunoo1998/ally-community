@@ -215,8 +215,15 @@ async function openFriends(prefill=''){
     if(warning&&!confirm(warning))return;
     await api('friends/'+action,{username:name});await reload();
   }
-  async function reload(){
-    const data=await api('friends');if(!activeView(view))return;
+  let previous='',refreshing=false;
+  async function reload(force=true){
+    if(refreshing)return;
+    refreshing=true;
+    let data;try{data=await api('friends');}finally{refreshing=false;}
+    if(!activeView(view))return;
+    const signature=JSON.stringify(data);
+    if(!force&&(signature===previous||lists.contains(document.activeElement)||lists.querySelector('details[open]')))return;
+    previous=signature;
     lists.replaceChildren();
     socialBadge(data.rows.filter(r=>!r.accepted&&!r.outgoing).length+data.rows.reduce((n,r)=>n+r.unread,0));
     const groups=[['Solicitudes recibidas',data.rows.filter(r=>!r.accepted&&!r.outgoing)],['Solicitudes enviadas',data.rows.filter(r=>!r.accepted&&r.outgoing)],['Mis amigos',data.rows.filter(r=>r.accepted)]];
@@ -250,7 +257,7 @@ async function openFriends(prefill=''){
   }
   const refresh=button(view,'Actualizar lista',reload);refresh.className='friend-refresh';
   await reload();
-  view.refreshFriends=reload;
+  view.refreshFriends=()=>reload(false);
 }
 async function openChat(id,username){
   open('Chat con @'+username);friendsView=null;
@@ -271,7 +278,7 @@ async function openChat(id,username){
   function makeMessage(row){
     const bubble=el('article',undefined);bubble.className='chat-message'+(row.own?' own':'');
     el('div',row.body,bubble).className='chat-text';
-    const footer=el('small',new Date(row.created*1000).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'})+(row.own?(row.read?' · Leído':' · Enviado'):''),bubble);
+    const footer=el('small',new Date(row.created*1000).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'})+(row.own?' · Enviado':''),bubble);
     footer.className='chat-time';return bubble;
   }
   async function fetchRows(mode='new'){
@@ -293,7 +300,7 @@ async function openChat(id,username){
       send.disabled=!data.canSend;hint.textContent=data.canSend?'':'Este usuario no está disponible para recibir mensajes.';
       if(high&&mode!=='older'&&data.rows.some(r=>!r.own&&!r.read)){await api('chat/'+id+'/read',{through:high});void refreshSocialBadge();}
       if(mode==='new'&&data.more&&activeView(view))setTimeout(()=>void fetchRows(),250);
-    }catch(error){if(activeView(view)){hint.textContent=error.message;send.disabled=true;}}
+    }catch(error){if(activeView(view)){hint.textContent=error.message;send.disabled=true;if(error.message==='Conversación no disponible.')log.replaceChildren();}}
     finally{busy=false;}
   }
   f.onsubmit=e=>{e.preventDefault();if(send.disabled)return;send.disabled=true;void attempt(async()=>{try{await api('chat/'+id+'/send',{body:message.value});message.value='';await fetchRows();}finally{if(activeView(view)&&!hint.textContent)send.disabled=false;}});};

@@ -261,6 +261,7 @@ async function route(request,env){
         return json({ok:true});
       }
       if(id==='unblock'){await run('DELETE FROM friend_blocks WHERE owner=? AND other=?',owner,target);return json({ok:true});}
+      if(id==='request')await cleanSocial();
       const existing=await related(target);
       if(id==='remove'||id==='decline'){
         if(!existing||(id==='remove'?!existing.accepted:!!existing.accepted))error('Solicitud o amistad no disponible.',404);
@@ -273,7 +274,6 @@ async function route(request,env){
       if(id==='request'){
         if(existing)error('Ya existe una amistad o solicitud pendiente.',409);
         await throttle('friend-request:'+owner,10,86400);
-        await cleanSocial();
         await run('INSERT INTO friend_links(a,b,requested_by,created) VALUES(?,?,?,?)',left,right,owner,timestamp);
         return json({ok:true},201);
       }
