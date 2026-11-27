@@ -34,7 +34,7 @@ function robotTone(){
     const ctx=robotContext;
     if(ctx.state==='suspended')ctx.resume().catch(()=>{});
     const now=ctx.currentTime;
-    for(const [offset,freq] of [[0,142],[.055,208]]){
+    for(const [offset,freq] of [[0,220],[.055,330]]){
       const o=ctx.createOscillator(),g=ctx.createGain(),f=ctx.createBiquadFilter();
       o.type='triangle';o.frequency.setValueAtTime(freq,now+offset);
       f.type='lowpass';f.frequency.value=740;
@@ -74,7 +74,7 @@ function speak(message){
   const voice=spanishVoice();
   if(!voice)return; // Never fall back to an unrelated language.
   const u=new SpeechSynthesisUtterance(message);
-  u.voice=voice;u.lang=voice.lang;u.pitch=.72;u.rate=.94;u.volume=.65;
+  u.voice=voice;u.lang=voice.lang;u.pitch=.89;u.rate=1.08;u.volume=.65;
   activeUtterance=u;
   u.onstart=()=>{if(activeUtterance===u){root.setAttribute('data-speaking','');clearTimeout(speechTimer);}};
   const done=()=>{if(activeUtterance!==u)return;clearTimeout(voiceTimer);activeUtterance=null;root.removeAttribute('data-speaking');clearTimeout(speechTimer);speechTimer=setTimeout(clearSpeech,650);};
@@ -88,13 +88,13 @@ sound.addEventListener('click',()=>{
   voiceEnabled=!voiceEnabled;
   try{localStorage.setItem('ally-community-voice',voiceEnabled?'on':'off');}catch{}
   updateSound();activity();
-  if(voiceEnabled){animate('wave','Sistema iniciado. ¡Soy Ally, tu colega robótico!');}
+  if(voiceEnabled){animate('wave','¡Bip, bip! ¡Hola, colega! Soy Ally. ¡Vamos a pasarlo genial!');}
   else{stopVoice();say('¡Modo silencio!',false);}
 });
 const reduced=matchMedia('(prefers-reduced-motion: reduce)');
 const reactions=[
- ['bounce','¡Bip, bip! Propulsores a tope.'],['spin','¡Circuitos al rescate!'],['dance','Modo fiesta activado. ¡Tengo ritmo!'],
- ['squish','¡Eh! ¡Que tengo tornillos sensibles!'],['wave','¡Hola, comandante! Todo en orden.'],['heart','Nivel de amistad aumentado. ¡Eres genial!']
+ ['bounce','¡Bip, bip! ¡Yuju, qué salto!'],['spin','¡Uuuy! ¡Mis circuitos están dando vueltas!'],['dance','¡Modo fiesta! ¡Mira cómo bailo!'],
+ ['squish','¡Ja, ja, ja! ¡Me haces cosquillas en los tornillos!'],['wave','¡Ey, colega! ¡Qué alegría verte!'],['heart','¡Amistad al máximo! ¡Choca esos cinco!']
 ];
 let position={x:1,y:1},drag=null,muted=false,lastAction=Date.now(),speechTimer,idleTimer,index=0,suppressUntil=0;
 try{const saved=JSON.parse(sessionStorage.getItem('ally-community-pet')||'null');if(saved){if(Number.isFinite(saved.x)&&Number.isFinite(saved.y))position={x:Math.max(0,Math.min(1,saved.x)),y:Math.max(0,Math.min(1,saved.y))};muted=saved.hidden===true;}}catch{}
@@ -116,7 +116,7 @@ pet.addEventListener('lostpointercapture',e=>finish(e,true));
 pet.addEventListener('click',e=>{if(e.detail!==0&&performance.now()<suppressUntil)return;activity();const [name,msg]=reactions[index++%reactions.length];animate(name,msg);});
 pet.addEventListener('keydown',e=>{if(e.key==='Home'){e.preventDefault();position={x:1,y:1};paint();save();return;}if(!e.shiftKey)return;const delta={ArrowLeft:[-24,0],ArrowRight:[24,0],ArrowUp:[0,-24],ArrowDown:[0,24]}[e.key];if(!delta)return;e.preventDefault();const r=root.getBoundingClientRect();move(r.left+delta[0],r.top+delta[1]);save();activity();});
 hide.addEventListener('click',()=>setHidden(true,true));
-restore.addEventListener('click',()=>{setHidden(false,true);activity();animate('wave','¡He vuelto!');});
+restore.addEventListener('click',()=>{setHidden(false,true);activity();animate('wave','¡Tachán! ¡Tu robot favorito ha vuelto!');});
 img.addEventListener('animationend',()=>img.removeAttribute('data-reaction'));
 window.addEventListener('resize',paint,{passive:true});
 function idle(){clearTimeout(idleTimer);idleTimer=setTimeout(()=>{if(!muted&&!drag&&!document.hidden&&!reduced.matches&&!document.querySelector('dialog[open]')&&Date.now()-lastAction>28000){animate(['wave','bounce','dance'][Math.floor(Math.random()*3)]);activity();}idle();},35000+Math.random()*18000);}
