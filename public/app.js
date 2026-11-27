@@ -189,17 +189,44 @@ function editor({post,debate=false,shared=false,comment,replyTo}={}){
   };
 }
 function votes(parent,item,kind){
-  const box=el('div',undefined,parent);box.className='votes';
-  const change=value=>session(async()=>{
-    const next=item.vote===value?0:value;
-    await api('vote',{kind,target:item.id,value:next});
-    item.score+=next-(item.vote||0);item.vote=next;
-    count.textContent=item.score;update();
-  });
-  const up=button(box,'▲',()=>change(1));up.setAttribute('aria-label','Votar a favor');
-  const count=el('strong',String(item.score),box);
-  const down=button(box,'▼',()=>change(-1));down.setAttribute('aria-label','Votar en contra');
-  function update(){up.setAttribute('aria-pressed',String(item.vote===1));down.setAttribute('aria-pressed',String(item.vote===-1));}
+  const bar=el('div',undefined,parent);bar.className='reaction-bar';
+  bar.setAttribute('role','group');
+  bar.setAttribute('aria-label',kind==='post'?'Reacciones a la publicación':'Reacciones al comentario');
+  item.likes=Number(item.likes)||0;
+  let busy=false;
+  const like=button(bar,undefined,()=>change(1));like.className='reaction-button reaction-like';
+  const thumb=el('span','👍',like);thumb.className='reaction-icon';thumb.setAttribute('aria-hidden','true');
+  el('span','Me gusta',like);
+  const count=el('span',undefined,like);count.className='reaction-count';
+  const dislike=button(bar,undefined,()=>change(-1));dislike.className='reaction-button reaction-dislike';
+  const down=el('span','👎',dislike);down.className='reaction-icon';down.setAttribute('aria-hidden','true');
+  el('span','No me gusta',dislike);
+  const score=el('small',undefined,bar);score.className='reaction-score';
+  function update(){
+    count.textContent=String(item.likes);
+    score.textContent='Puntuación: '+item.score;
+    like.setAttribute('aria-pressed',String(item.vote===1));
+    dislike.setAttribute('aria-pressed',String(item.vote===-1));
+    like.setAttribute('aria-label',(item.vote===1?'Quitar Me gusta':'Dar Me gusta')+'; '+item.likes+' en total');
+    dislike.setAttribute('aria-label',item.vote===-1?'Quitar voto negativo':'Votar en contra');
+  }
+  async function change(value){
+    return session(async()=>{
+      if(busy)return;
+      busy=true;like.disabled=true;dislike.disabled=true;
+      try{
+        const previous=Number(item.vote)||0;
+        const next=previous===value?0:value;
+        await api('vote',{kind,target:item.id,value:next});
+        item.likes=Math.max(0,item.likes+(next===1?1:0)-(previous===1?1:0));
+        item.score+=next-previous;
+        item.vote=next;
+        update();
+      }finally{
+        busy=false;like.disabled=false;dislike.disabled=false;
+      }
+    });
+  }
   update();
 }
 function describe(parent,item){const row=el('small',undefined,parent);row.textContent=[item.pinned?'Fijada':null,item.categoryName,item.username?'@'+item.username:'Usuario anónimo',item.author?'Autor original':null,new Date(item.created*1000).toLocaleDateString('es-ES')].filter(Boolean).join(' · ');if(item.role==='admin'){const badge=el('span','ADMIN',row);badge.className='admin-badge';}}
@@ -232,7 +259,6 @@ function actions(parent,item,kind){
 }
 function card(parent,item,detail=false){
   const article=el('article',undefined,parent);article.className='card';
-  votes(article,item,'post');
   const info=el('div',undefined,article);
   describe(info,item);
   const heading=el(detail?'h1':'h2',undefined,info);
@@ -254,6 +280,7 @@ function card(parent,item,detail=false){
     if(tags.length)el('small',tags.map(v=>'#'+v).join(' '),info);
   }
   el('p',item.replies+' '+(item.replies===1?'comentario':'comentarios'),info);
+  votes(info,item,'post');
   if(detail)actions(info,item,'post');
 }
 async function comments(parent,post,parentId,sort,after){
