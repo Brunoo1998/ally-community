@@ -114,7 +114,8 @@ function chooseProfile(resume=()=>load()){
   const submit=el('button','Reservar mi nombre',f);submit.className='primary';
   f.onsubmit=e=>{e.preventDefault();if(submit.disabled)return;submit.disabled=true;
     void attempt(async()=>{try{const username=name.value;await verifySession(async()=>{const result=await api('profile',{username});await refreshProfile();recoveryView(result.recovery,resume);});}finally{submit.disabled=false;}});};
-  button(content,'Ya tengo un código de recuperación',()=>recoverProfile(resume));
+  button(content,'Ya tengo cuenta · Acceder desde otro dispositivo',()=>accessProfile(resume)).className='primary';
+  button(content,'Usar código de recuperación',()=>recoverProfile(resume));
   button(content,'Solo quiero leer',()=>modal.close());
 }
 function recoverProfile(resume){
@@ -124,6 +125,46 @@ function recoverProfile(resume){
   const submit=el('button','Recuperar perfil',f);submit.className='primary';
   f.onsubmit=e=>{e.preventDefault();if(submit.disabled)return;submit.disabled=true;const value=code.value.trim();void attempt(async()=>{try{await verifySession(async()=>{await api('profile/recover',{code:value});await refreshProfile();modal.close();await resume?.();});}finally{submit.disabled=false;}});};
 }
+function deviceKeyView(key){
+  open('Tu clave para otros dispositivos');
+  el('p','Para abrir tu mismo perfil en otro dispositivo necesitarás tu nombre de usuario y esta clave. Se muestra solo ahora: guárdala en un gestor de contraseñas y no la publiques.',content);
+  const display=el('textarea',undefined,content);
+  display.value=key;display.readOnly=true;display.rows=3;
+  display.setAttribute('aria-label','Nueva clave de acceso entre dispositivos');
+  button(content,'Copiar clave',async()=>{
+    if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(key);
+    else{display.focus();display.select();throw Error('Copia la clave seleccionada manualmente.');}
+    $('#modal-status').textContent='Clave copiada.';
+  }).className='primary';
+  el('small','La nueva clave sustituye a la anterior, pero no cierra sesiones ya iniciadas. Tu código de recuperación original sigue siendo válido.',content);
+  button(content,'He guardado la clave',()=>showProfile());
+}
+function accessProfile(resume){
+  open('Entrar en mi cuenta desde otro dispositivo');
+  el('p','Introduce el nombre de usuario que ya tienes y la clave de acceso que generaste desde un dispositivo con tu sesión iniciada.',content);
+  const f=el('form',undefined,content);f.className='stack';
+  const username=input(f,'Nombre de usuario','username',{max:20,required:true});username.minLength=3;username.pattern='[A-Za-z0-9_]{3,20}';username.autocomplete='username';
+  const key=input(f,'Clave para otros dispositivos','key',{max:64,required:true});key.type='password';key.autocomplete='off';key.minLength=64;key.pattern='[A-Fa-f0-9]{64}';
+  const submit=el('button','Entrar en mi cuenta',f);submit.className='primary';
+  f.onsubmit=event=>{
+    event.preventDefault();
+    if(submit.disabled)return;
+    const name=username.value.trim(),accessKey=key.value.trim();
+    submit.disabled=true;
+    void attempt(async()=>{
+      try{
+        await verifySession(async()=>{
+          await api('profile/device-login',{username:name,key:accessKey});
+          await refreshProfile();
+          modal.close();
+          await resume?.();
+        });
+      }finally{key.value='';submit.disabled=false;}
+    });
+  };
+  button(content,'¿No tienes esa clave? Usar código de recuperación',()=>recoverProfile(resume));
+  el('small','Para generar o renovar la clave, abre «Mi perfil» en el dispositivo donde ya estás identificado. Cada clave nueva invalida la anterior.',content);
+}
 async function session(resume){if(meta.profile)return resume();chooseProfile(resume);}
 async function showProfile(){
   if(!meta.profile){chooseProfile();return;}
@@ -132,6 +173,14 @@ async function showProfile(){
   el('h3','@'+data.profile.username+(data.profile.role==='admin'?' · Administrador':''),content);
   el('p','Miembro desde '+new Date(data.profile.created*1000).toLocaleDateString('es-ES'),content);
   el('p',data.counts.posts+' publicaciones · '+data.counts.comments+' comentarios · '+data.counts.votes+' votos',content);
+  el('h3','Acceso desde otros dispositivos',content);
+  el('p',data.deviceKeyEnabled?'Ya tienes una clave de acceso configurada. Si no la conservas, puedes generar otra.':'Genera una clave privada para entrar con tu mismo nombre desde el móvil, PC u otro navegador.',content);
+  button(content,data.deviceKeyEnabled?'Renovar clave para otros dispositivos':'Generar clave para otros dispositivos',async()=>{
+    if(data.deviceKeyEnabled&&!confirm('Se invalidará la clave de acceso anterior. Las sesiones de otros dispositivos seguirán abiertas. ¿Continuar?'))return;
+    const result=await api('profile/device-key',{});
+    deviceKeyView(result.key);
+  }).className='primary';
+  el('small','La clave se muestra solo una vez. No se guarda en claro en la base de datos.',content);
   button(content,'Generar nuevo código de recuperación',async()=>{if(!confirm('El código anterior dejará de funcionar. ¿Continuar?'))return;const r=await api('profile/rotate',{});recoveryView(r.recovery);});
   if(data.profile.role==='admin')link(content,'Abrir panel de moderación','/admin.html');
   else button(content,'Identificarme como administrador',()=>{
