@@ -43,3 +43,11 @@ body:has(dialog[open]) .ally-pet{display:none}
  @keyframes pet-heart{0%,100%{transform:none}25%,65%{transform:scale(1.18);filter:drop-shadow(0 0 12px #ed72f8)}45%{transform:scale(.95)}}
  @keyframes pet-land{0%{transform:translateY(-5px)}45%{transform:scale(1.14,.83)}100%{transform:none}}
 }
+
+/* Ally voice toggle and speaking indicator. */
+.ally-pet-sound{position:absolute;top:-2px;left:-2px;width:32px;height:32px;min-height:0;padding:0;line-height:1;font-size:.95rem;border-radius:50%;background:#1d1728f2;border-color:#78639a;color:var(--ink)}
+.ally-pet-sound[aria-pressed=true]{border-color:#8bbd63}
+.ally-pet-sound:disabled{opacity:.55;cursor:default}
+.ally-pet[data-minimized] .ally-pet-sound,.ally-pet[data-dragging] .ally-pet-sound{display:none}
+.ally-pet[data-speaking] .ally-pet-speech{border-color:var(--green)}
+@media(prefers-reduced-motion:no-preference){.ally-pet[data-speaking] .ally-pet-button img:not([data-reaction]){animation:ally-speaking .38s ease-in-out infinite alternate}@keyframes ally-speaking{from{transform:scale(1)}to{transform:scale(1.035,.96);filter:drop-shadow(0 0 7px #b1f87470)}}}
