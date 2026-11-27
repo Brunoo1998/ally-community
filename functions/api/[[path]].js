@@ -133,8 +133,8 @@ async function route(request,env){
   if(resource==='admin'){
     await admin(request,env);
     if(method==='GET'){
-      const tables=['posts','comments','reports','audit','categories','settings'];
-      const fields=table=>table==='posts'?'id,owner,category,title,body,game,tags,config,debate,status,closed,pinned,score,replies,hash,created,views,json_array_length(photos) AS photoCount':table==='comments'?'id,post,parent,depth,owner,body,status,score,created,json_array_length(photos) AS photoCount':'*';
+      const tables=['posts','comments','reports','audit','categories','settings','ally_bot_settings'];
+      const fields=table=>table==='ally_bot_settings'?'id,enabled':table==='posts'?'id,owner,category,title,body,game,tags,config,debate,status,closed,pinned,score,replies,hash,created,views,json_array_length(photos) AS photoCount':table==='comments'?'id,post,parent,depth,owner,body,status,score,created,json_array_length(photos) AS photoCount':'*';
       if(id==='export'){
         const table=query.get('table');
         if(![...tables,'sessions','votes','notices'].includes(table))error('Tabla no válida.');
@@ -144,7 +144,10 @@ async function route(request,env){
     }
     const data=await body(request), target=positive(data.id);
     let statement,notice;
-    if(id==='settings'){
+    if(id==='ally-bot'){
+      if(typeof data.enabled!=='boolean')error('Estado no válido.');
+      statement=sql('UPDATE ally_bot_settings SET enabled=? WHERE id=1',+data.enabled);
+    }else if(id==='settings'){
       statement=sql('UPDATE settings SET readonly=?,stop_posts=?,review=? WHERE id=1',+!!data.readonly,+!!data.stop_posts,+!!data.review);
     }else if(id==='category'){
       if(data.delete){
@@ -157,6 +160,7 @@ async function route(request,env){
       }
     }else if(id==='report'&&target)statement=sql('UPDATE reports SET closed=1 WHERE id=?',target);
     else if(id==='block'&&/^[a-f0-9]{64}$/.test(data.owner||'')){
+      if(await first('SELECT 1 AS bot FROM ally_bot_settings WHERE owner=?',data.owner))error('Usa el interruptor de participación de Ally.',409);
       const seconds=Number(data.seconds);
       if(!Number.isInteger(seconds)||seconds<0||seconds>31536000)error('Duración no válida.');
       statement=sql('UPDATE sessions SET blocked_until=? WHERE id=?',data.permanent?253402300799:seconds?timestamp+seconds:0,data.owner);
@@ -251,7 +255,7 @@ async function route(request,env){
       // Límites por IP y por combinación IP/usuario: no se almacena la IP en claro.
       await throttle('device-ip:'+await fingerprint('all'),40,3600);
       await throttle('device-account:'+await fingerprint(username.toLowerCase()),10,3600);
-      const profile=await first('SELECT p.owner,s.blocked_until FROM profiles p JOIN sessions s ON s.id=p.owner WHERE p.username=? AND p.device_key_hash=?',username,await digest(accessKey));
+      const profile=await first("SELECT p.owner,s.blocked_until FROM profiles p JOIN sessions s ON s.id=p.owner WHERE p.username=? AND p.username<>'Ally' COLLATE NOCASE AND p.device_key_hash=?",username,await digest(accessKey));
       if(!profile)error('Usuario o clave de acceso incorrectos.',401);
       if(profile.blocked_until>timestamp)error('Este perfil tiene el acceso restringido.',403);
       const key=token();
@@ -263,7 +267,7 @@ async function route(request,env){
       await throttle('recover:'+owner,6,3600);
       const code=field(data.code,64,64).toLowerCase();
       if(!/^[a-f0-9]{64}$/.test(code))error('Código de recuperación incorrecto.',400);
-      const profile=await first('SELECT owner FROM profiles WHERE recovery_hash=?',await digest(code));
+      const profile=await first("SELECT owner FROM profiles WHERE recovery_hash=? AND username<>'Ally' COLLATE NOCASE",await digest(code));
       if(!profile)error('Código de recuperación incorrecto.',400);
       const key=token();
       await run('INSERT INTO profile_devices(id,owner,expires) VALUES(?,?,?)',await digest(key),profile.owner,timestamp+15552000);

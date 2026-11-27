@@ -68,3 +68,6 @@ Hasta 3 fotos por publicación y 2 por comentario. El navegador reduce a 1600 px
 
 ## Informes privados de moderación
 La migración 0008 crea admin_notifications. La tarea de moderación escribe informes con una clave de entrega idempotente y destinatario resuelto por el rol admin único. El endpoint /api/admin-notices comprueba la sesión y el rol admin, además del owner, y no devuelve informes a visitantes ni miembros. Notificaciones muestra historial, contador y marcado de lectura. La bandeja no concede permisos para suspender cuentas. No contiene credenciales ni datos privados del titular.
+
+## Ally como participante virtual
+Migración 0009: perfil reservado Ally (miembro de servicio, no puede iniciar sesión), pausa y registro idempotente. La tarea horaria genera respuestas contextuales; la inserción controlada en ally_bot_replies respeta estado del hilo, moderación previa, solo lectura y cuotas de 8 respuestas cada 24h, 2 por hilo cada 24h y 1 por hilo cada hora. Stickers con lista cerrada y recurso local ally.webp.

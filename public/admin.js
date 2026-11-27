@@ -67,6 +67,10 @@ async function load(){
   const stop=input(panel,'Pausar publicaciones nuevas',settings.stop_posts,'checkbox');
   const review=input(panel,'Moderación previa',settings.review,'checkbox');
   change(panel,'Guardar ajustes','/settings',()=>({readonly:readonly.checked,stop_posts:stop.checked,review:review.checked}));
+  const ally=group(panel,'Participación de Ally IA');
+  make(ally,'p','Ally es un participante virtual identificado. Puedes pausar sus respuestas sin borrar su historial.');
+  const enabled=input(ally,'Permitir respuestas de Ally',data.ally_bot_settings?.[0]?.enabled,'checkbox');
+  change(ally,'Guardar participación de Ally','/ally-bot',()=>({enabled:enabled.checked}));
   const categories=group(panel,'Categorías');
   for(const item of [...data.categories,{}]){
     const box=make(categories,'article');box.className='comment';

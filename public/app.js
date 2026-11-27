@@ -56,10 +56,45 @@ function open(title){
   $('#modal-title').textContent=title;content.replaceChildren();$('#modal-status').textContent='';
   if(!modal.open)modal.showModal();
 }
-function renderText(parent,text){
+const stickerPack={saludo:['¡Hola!','👋'],fiesta:['¡Bien hecho!','🎉'],gaming:['A jugar','🎮'],gracias:['¡Gracias!','💚'],ayuda:['¿Te ayudo?','💡'],risa:['¡Ja, ja!','😄'],pensando:['Procesando…','🤔'],victoria:['¡Victoria!','🏆']};
+function makeSticker(parent,id,compact=false){
+  if(!Object.hasOwn(stickerPack,id))return null;
+  const [label,symbol]=stickerPack[id];
+  const wrap=el('span',undefined,parent);wrap.className='ally-sticker sticker-'+id+(compact?' sticker-compact':'');
+  wrap.setAttribute('role','img');wrap.setAttribute('aria-label','Sticker de Ally: '+label);
+  const art=el('span',undefined,wrap);art.className='sticker-art';art.setAttribute('aria-hidden','true');
+  const img=el('img',undefined,art);img.src='/ally.webp';img.alt='';img.loading='lazy';
+  const emoji=el('span',symbol,art);emoji.className='sticker-symbol';
+  const caption=el('span',label,wrap);caption.className='sticker-caption';caption.setAttribute('aria-hidden','true');
+  return wrap;
+}
+function stickerPicker(form,body){
+  const picker=el('details',undefined,form);picker.className='sticker-picker';
+  el('summary','😄 Stickers de Ally',picker);
+  el('small','Elige un sticker para añadirlo al mensaje. Puedes combinarlo con texto y fotos.',picker);
+  const grid=el('div',undefined,picker);grid.className='sticker-options';
+  for(const [id,[label]] of Object.entries(stickerPack)){
+    const choose=button(grid,undefined,()=>{
+      const token='[sticker:'+id+']',start=body.selectionStart??body.value.length,end=body.selectionEnd??start;
+      const prefix=start&& !/\s/.test(body.value[start-1])?' ':'';
+      const value=prefix+token+' ';
+      if(body.value.length-(end-start)+value.length>body.maxLength)throw Error('El mensaje ha alcanzado su longitud máxima.');
+      body.setRangeText(value,start,end,'end');body.focus();
+    });
+    choose.className='sticker-choice';choose.setAttribute('aria-label','Añadir sticker: '+label);makeSticker(choose,id,true);
+  }
+}
+function botIdentity(parent,item){
+  if(item.username!=='Ally'||item.role!=='member')return;
+  const badge=el('span','ALLY IA',parent);badge.className='ally-bot-badge';badge.title='Mascota virtual oficial · respuestas generadas por IA';
+}
+
+function renderText(parent,text,compact=false){
   const box=el('div',undefined,parent);box.className='prose';
-  const pattern=/(\*\*[^*\n]+\*\*|`[^`\n]+`|\[[^\]\n]+\]\(https:\/\/[^\s)]+\))/g;
+  const pattern=/(\[sticker:[a-z]+\]|\*\*[^*\n]+\*\*|`[^`\n]+`|\[[^\]\n]+\]\(https:\/\/[^\s)]+\))/g;
   for(const part of String(text||'').split(pattern)){
+    const sticker=part.match(/^\[sticker:([a-z]+)\]$/);
+    if(sticker&&makeSticker(box,sticker[1],compact))continue;
     if(part.startsWith('**')&&part.endsWith('**')&&part.length>4)el('strong',part.slice(2,-2),box);
     else if(part.startsWith('`')&&part.endsWith('`')&&part.length>2)el('code',part.slice(1,-1),box);
     else{
@@ -294,6 +329,7 @@ function editor({post,debate=false,shared=false,comment,replyTo}={}){
   }
   const body=input(f,'Contenido','body',{max:isComment?2000:5000,multiline:true,required:false,value:post?.body||comment?.body});
   el('small','Formato básico con **negrita**, código y enlaces Markdown HTTPS.',f);
+  stickerPicker(f,body);
   const attachments=photoEditor(f,comment||post,isComment?'comment':'post');
   const preview=el('div',undefined,f);preview.className='editor-preview';
   const editorActions=el('div',undefined,f);editorActions.className='editor-actions';
@@ -373,7 +409,9 @@ function describe(parent,item){
     item.username?'@'+item.username:'Usuario anónimo',
     item.author?'Autor original':null
   ].filter(Boolean);
+  if(item.username==='Ally'&&item.role==='member'){const avatar=el('img',undefined,row);avatar.className='ally-bot-avatar';avatar.src='/ally.webp';avatar.alt='';}
   if(fields.length)row.append(document.createTextNode(fields.join(' · ')+' · '));
+  botIdentity(row,item);
   const created=new Date(item.created*1000);
   const date=created.toLocaleDateString('es-ES');
   const hour=created.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',hour12:false});
@@ -436,7 +474,9 @@ function renderRecentComments(parent,post){
   for(const comment of recent){
     const block=el('div',undefined,section);block.className='recent-comment';
     const meta=el('div',undefined,block);meta.className='recent-comment-meta';
+    if(comment.username==='Ally'&&comment.role==='member'){const avatar=el('img',undefined,meta);avatar.className='ally-bot-avatar';avatar.src='/ally.webp';avatar.alt='';}
     const author=el('strong',comment.username?'@'+comment.username:'Usuario anónimo',meta);
+    botIdentity(meta,comment);
     if(comment.role==='admin'){
       const badge=el('span','ADMIN',meta);badge.className='admin-badge';
     }
@@ -447,10 +487,10 @@ function renderRecentComments(parent,post){
     const text=String(comment.body||'');
     const flattened=text.replace(/\s+/g,' ').trim();
     const fullLength=Number(comment.bodyLength)||text.length;
-    const excerpt=flattened.slice(0,185).trimEnd();
+    const excerpt=flattened.slice(0,185).replace(/\[sticker:[a-z]*$/,'').trimEnd();
     const trimmed=fullLength>185;
-    const textNode=el('p',trimmed?excerpt+'…':text,block);
-    textNode.className='recent-comment-text';
+    const textNode=el('div',undefined,block);textNode.className='recent-comment-text';
+    renderText(textNode,trimmed?excerpt+'…':text,true);
     renderPhotos(block,comment,'comment',true);
 
     if(fullLength>600){
@@ -459,7 +499,7 @@ function renderRecentComments(parent,post){
     }else if(trimmed){
       const expand=button(block,'Ver más',()=>{
         const open=expand.getAttribute('aria-expanded')==='true';
-        textNode.textContent=open?excerpt+'…':text;
+        textNode.replaceChildren();renderText(textNode,open?excerpt+'…':text,true);
         expand.textContent=open?'Ver más':'Ver menos';
         expand.setAttribute('aria-expanded',String(!open));
       });
@@ -511,7 +551,7 @@ async function comments(parent,post,parentId,sort,after){
   const result=await api('comments?'+query);
   if(!result.rows.length&&!after&&!parentId)el('p','Todavía no hay comentarios.',parent);
   for(const item of result.rows){
-    const article=el('article',undefined,parent);article.className='comment';
+    const article=el('article',undefined,parent);article.className='comment'+(item.username==='Ally'&&item.role==='member'?' ally-bot-comment':'');
     if(item.status==='deleted')el('p','[Comentario eliminado]',article);
     else{
       describe(article,item);renderText(article,item.body);renderPhotos(article,item,'comment');votes(article,item,'comment');

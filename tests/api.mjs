@@ -16,6 +16,7 @@ db.exec(readFileSync(new URL('../migrations/0005_device_access.sql',import.meta.
 db.exec(readFileSync(new URL('../migrations/0006_recent_comments_index.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0007_photos.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0008_admin_notifications.sql',import.meta.url),'utf8'));
+db.exec(readFileSync(new URL('../migrations/0009_ally_bot.sql',import.meta.url),'utf8'));
 const env={
   TURNSTILE_SITE_KEY:'test-site-key',TURNSTILE_SECRET:'test-secret',
   RATE_SECRET:'r'.repeat(64),ADMIN_TOKEN:'a'.repeat(64),
@@ -261,6 +262,22 @@ try{
   assert.equal((await req('admin-notices',{cookie:a})).result.rows.length,1);
   assert.ok((await req('admin-notices',{cookie:a})).result.rows[0].read_at);
   assert.ok(!(await req('notices',{cookie:b})).result.rows.some(x=>x.message==='Caso de prueba'));
+  const allyProfile=db.prepare("SELECT owner,role FROM profiles WHERE username='Ally'").get();
+  assert.equal(allyProfile.role,'member');
+  assert.throws(()=>db.prepare('INSERT INTO profile_devices(id,owner,expires) VALUES(?,?,?)').run('f'.repeat(64),allyProfile.owner,253402300799),/ally_service_identity/);
+  const botPost=(await req('posts',{cookie:a,data:{category:2,title:'Consulta para Ally',body:'¿Algún consejo? [sticker:saludo]'},status:201})).result.id;
+  const addBot=db.prepare("INSERT INTO ally_bot_replies(kind,target,post_id,response) VALUES('post',?,?,?)");
+  addBot.run(botPost,botPost,'¡Hola! ¿Qué juego estás probando? [sticker:ayuda]');
+  const botRow=(await req('comments?post='+botPost)).result.rows[0];
+  assert.equal(botRow.username,'Ally');assert.equal(botRow.role,'member');assert.match(botRow.body,/sticker:ayuda/);
+  assert.equal((await req('posts/'+botPost)).result.replies,1);
+  assert.throws(()=>addBot.run(botPost,botPost,'Otra respuesta'),/UNIQUE/);
+  assert.equal(db.prepare('SELECT comment_id FROM ally_bot_replies WHERE target=?').get(botPost).comment_id,botRow.id);
+  await req('admin/ally-bot',{cookie:b,data:{enabled:false},status:401});
+  await req('admin/ally-bot',{key:env.ADMIN_TOKEN,data:{enabled:false}});
+  const otherPost=(await req('posts',{cookie:a,data:{category:2,title:'Otro tema para Ally',body:'Texto de prueba'},status:201})).result.id;
+  assert.throws(()=>addBot.run(otherPost,otherPost,'Respuesta no autorizada'),/ally_reply_not_allowed/);
+  await req('admin/ally-bot',{key:env.ADMIN_TOKEN,data:{enabled:true}});
   await req('posts',{overrides:{DB:null},status:503});
   console.log('SQLite persistente, dos sesiones, debate, configuración, comentarios, votos, denuncias, moderación y fallos: OK');
 }finally{
