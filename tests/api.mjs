@@ -13,6 +13,7 @@ db.exec(readFileSync(new URL('../migrations/0002_profiles.sql',import.meta.url),
 db.exec(readFileSync(new URL('../migrations/0003_votes_likes_index.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0004_post_unique_views.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0005_device_access.sql',import.meta.url),'utf8'));
+db.exec(readFileSync(new URL('../migrations/0006_recent_comments_index.sql',import.meta.url),'utf8'));
 const env={
   TURNSTILE_SITE_KEY:'test-site-key',TURNSTILE_SECRET:'test-secret',
   RATE_SECRET:'r'.repeat(64),ADMIN_TOKEN:'a'.repeat(64),
@@ -143,9 +144,33 @@ try{
   await req('posts/'+post+'/edit',{cookie:b,data:{title:'Otro título',body:'Texto nuevo'},status:404});
   await req('posts/'+post+'/edit',{cookie:a,data:{title:'Ajustes nuevos',body:'Texto nuevo'}});
   const comment=(await req('comments',{cookie:b,data:{post,body:'He probado los ajustes.'},status:201})).result.id;
-  await req('comments',{cookie:a,data:{post,parent:comment,body:'Gracias por la prueba.'},status:201});
+  const replyId=(await req('comments',{cookie:a,data:{post,parent:comment,body:'Gracias por la prueba.'},status:201})).result.id;
+  const firstPreview=(await req('posts?')).result.rows.find(row=>row.id===post).latestComments;
+  assert.equal(firstPreview.length,2);
+  assert.deepEqual(firstPreview.map(item=>item.id),[replyId,comment]);
+  assert.equal(firstPreview[0].body,'Gracias por la prueba.');
+  assert.equal(firstPreview[0].username,'TestGamer');
+  assert.equal(firstPreview[0].role,'admin');
+  assert.ok(firstPreview[0].created>0);
+  assert.equal(firstPreview[0].post,post);
+  assert.equal((await req('posts/'+post)).result.latestComments,undefined);
   assert.equal((await req('comments?post='+post+'&parent='+comment)).result.rows[0].author,1);
   assert.equal((await req('notices',{cookie:b})).result.rows.length,1);
+  // Solo aparecen los dos más recientes, incluyendo respuestas anidadas,
+  // con recorte de textos gigantes en la API de portada.
+  const mediumText='Comentario mediano '+ 'm'.repeat(240);
+  const largeText='Comentario demasiado largo '+ 'L'.repeat(1550);
+  const mediumId=(await req('comments',{cookie:b,data:{post,body:mediumText},status:201})).result.id;
+  const largeId=(await req('comments',{cookie:a,data:{post,body:largeText},status:201})).result.id;
+  const recent=(await req('posts?sort=views')).result.rows.find(row=>row.id===post).latestComments;
+  assert.deepEqual(recent.map(item=>item.id),[largeId,mediumId]);
+  assert.equal(recent[0].bodyLength,largeText.length);
+  assert.equal(recent[0].body.length,601);
+  assert.equal(recent[1].bodyLength,mediumText.length);
+  assert.equal(recent[1].body,mediumText);
+  assert.equal(recent[1].username,'OtherGamer');
+  const limitedPage=(await req('posts?after=0:999999:999999')).result.rows;
+  assert.ok(Array.isArray(limitedPage[0]?.latestComments));
   await req('comments/'+comment+'/edit',{cookie:b,data:{body:'Comentario corregido'}});
   assert.equal((await req('comments?post='+post,{cookie:a})).result.rows[0].likes,0);
   await req('vote',{cookie:a,data:{kind:'comment',target:comment,value:1}});
@@ -173,9 +198,17 @@ try{
   await req('admin',{status:401});
   const admin=(await req('admin',{key:env.ADMIN_TOKEN})).result;
   assert.equal(admin.reports.length,1);
+  // El comentario oculto nunca se muestra en portada.
+  await req('admin/comment',{key:env.ADMIN_TOKEN,data:{id:largeId,status:'hidden'}});
+  const afterHide=(await req('posts?')).result.rows.find(row=>row.id===post).latestComments;
+  assert.deepEqual(afterHide.map(item=>item.id),[mediumId,replyId]);
+  assert.ok(!afterHide.some(item=>item.id===comment)); // Comentario eliminado anteriormente
   await req('admin/settings',{key:env.ADMIN_TOKEN,data:{readonly:true}});
   await req('comments',{cookie:b,data:{post,body:'Comprobación de cierre'},status:403});
   await req('admin/settings',{key:env.ADMIN_TOKEN,data:{readonly:false,review:true}});
+  const pendingComment=(await req('comments',{cookie:b,data:{post,body:'Esta respuesta no debe aparecer en portada.'},status:201})).result;
+  assert.equal(pendingComment.status,'pending');
+  assert.ok(!(await req('posts?')).result.rows.find(row=>row.id===post).latestComments.some(item=>item.id===pendingComment.id));
   const debate={category:2,title:'Debate de Cyberpunk',body:'Hilo de Cyberpunk',game:draft.game,debate:true};
   const pending=(await req('posts',{cookie:a,data:debate,status:201})).result;
   await req('posts',{cookie:b,data:debate,status:409});
