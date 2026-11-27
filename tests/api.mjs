@@ -11,6 +11,7 @@ let db=new DatabaseSync(filename);
 db.exec(readFileSync(new URL('../migrations/0001_initial.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0002_profiles.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0003_votes_likes_index.sql',import.meta.url),'utf8'));
+db.exec(readFileSync(new URL('../migrations/0004_post_unique_views.sql',import.meta.url),'utf8'));
 const env={
   TURNSTILE_SITE_KEY:'test-site-key',TURNSTILE_SECRET:'test-secret',
   RATE_SECRET:'r'.repeat(64),ADMIN_TOKEN:'a'.repeat(64),
@@ -77,6 +78,30 @@ try{
   db.close();db=new DatabaseSync(filename);
   const detail=(await req('posts/'+post,{cookie:a})).result;
   assert.equal(detail.own,1);assert.equal(detail.username,'TestGamer');assert.equal(detail.role,'admin');assert.equal(JSON.parse(detail.config).resolution,'900p');
+  // Las lecturas GET no inflan el contador: se registra solo al abrir el hilo.
+  assert.equal(detail.views,0);
+  assert.equal((await req('posts/'+post)).result.views,0);
+  await req('visits',{data:{post},origin:'https://third-party.test',status:403});
+  await req('visits',{data:{post:-1},status:400});
+  await req('visits',{data:{post:987654},status:404});
+  const firstView=await req('visits',{data:{post}});
+  assert.equal(firstView.result.views,1);
+  assert.match(firstView.cookie,/__Host-ally_visitor=[a-f0-9]{64}/);
+  assert.match(firstView.cookie,/Secure; HttpOnly; SameSite=Lax/);
+  const guestCookie=firstView.cookie.split(';')[0];
+  const repeated=await req('visits',{data:{post},cookie:guestCookie});
+  assert.equal(repeated.result.views,1);
+  assert.equal(repeated.cookie,null);
+  assert.equal((await req('visits',{data:{post}})).result.views,2); // Otro navegador sin cookie
+  assert.equal((await req('visits',{data:{post},cookie:a})).result.views,3);
+  assert.equal((await req('visits',{data:{post},cookie:recovery.cookie.split(';')[0]})).result.views,3); // Mismo perfil en otro dispositivo
+  assert.equal((await req('visits',{data:{post},cookie:b})).result.views,4);
+  assert.equal((await req('visits',{data:{post},cookie:b})).result.views,4);
+  assert.equal((await req('posts/'+post)).result.views,4);
+  assert.equal((await req('posts?sort=views')).result.rows[0].views,4);
+  assert.equal((await req('stats')).result.mostVisited[0].views,4);
+  assert.equal((await req('stats')).result.totals.uniqueViews,4);
+
   assert.equal((await req('posts?q=cyberpunk')).result.rows[0].id,post);
   assert.equal((await req('posts?game='+draft.game)).result.rows[0].id,post);
   await req('posts/'+post+'/edit',{cookie:b,data:{title:'Otro título',body:'Texto nuevo'},status:404});
@@ -123,6 +148,7 @@ try{
   assert.equal((await req('posts',{cookie:b,data:debate})).result.id,pending.id);
   await req('posts/'+post+'/delete',{cookie:a,data:{}});
   await req('posts/'+post,{status:404});
+  await req('visits',{data:{post},cookie:guestCookie,status:404});
   const limited={kind:'post',target:pending.id,value:1};
   for(let i=0;i<24;i++)await req('vote',{cookie:b,data:limited});
   await req('vote',{cookie:b,data:limited,status:429});
