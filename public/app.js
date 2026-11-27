@@ -372,8 +372,7 @@ function renderRecentComments(parent,post){
       const expand=button(block,'Ver más',()=>{
         const open=expand.getAttribute('aria-expanded')==='true';
         textNode.textContent=open?excerpt+'…':text;
-        expand.textContent=open?'Ver menos':'Ver menos';
-        if(open)expand.textContent='Ver más';
+        expand.textContent=open?'Ver más':'Ver menos';
         expand.setAttribute('aria-expanded',String(!open));
       });
       expand.className='recent-comment-toggle';
