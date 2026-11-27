@@ -13,9 +13,9 @@ h1{font-size:clamp(1.65rem,4vw,2.35rem);margin:1.2rem 0 .65rem}h2{line-height:1.
 .ally-pet button{pointer-events:auto}
 .ally-pet-button{position:absolute;inset:0;display:grid;place-items:center;width:78px;height:78px;padding:4px;min-height:0;border:0;background:transparent;touch-action:none;user-select:none;cursor:grab}
 .ally-pet-button:hover{border:0}
-.ally-pet-button img{width:64px;height:64px;object-fit:contain;pointer-events:none;transform-origin:50% 85%;filter:drop-shadow(0 3px 6px #0009)}
+.ally-pet-button > img{width:64px;height:64px;object-fit:contain;pointer-events:none;transform-origin:50% 85%;filter:drop-shadow(0 3px 6px #0009)}
 .ally-pet[data-dragging] .ally-pet-button{cursor:grabbing}
-.ally-pet[data-dragging] img{transform:rotate(-12deg) scale(1.05)}
+.ally-pet[data-dragging] .ally-pet-button > img{transform:rotate(-12deg) scale(1.05)}
 .ally-pet-hide{position:absolute;top:-2px;right:-2px;width:28px;height:28px;min-height:0;padding:0;line-height:1;font-size:1.1rem;border-radius:50%;background:#1d1728e8;color:var(--muted)}
 .ally-pet-restore{display:none;position:absolute;inset:auto 0 0 auto;min-height:44px;font-size:.8rem;color:var(--green);border-color:#78639a;border-radius:1rem}
 .ally-pet[data-minimized]{width:58px;height:44px}
@@ -28,13 +28,13 @@ h1{font-size:clamp(1.65rem,4vw,2.35rem);margin:1.2rem 0 .65rem}h2{line-height:1.
 body:has(dialog[open]) .ally-pet{display:none}
 @media(max-width:640px){body:has(input:focus,textarea:focus) .ally-pet{visibility:hidden}}
 @media(prefers-reduced-motion:no-preference){
- .ally-pet-button img[data-reaction="bounce"]{animation:pet-bounce .65s ease both}
- .ally-pet-button img[data-reaction="spin"]{animation:pet-spin .7s ease both}
- .ally-pet-button img[data-reaction="dance"]{animation:pet-dance .8s ease both}
- .ally-pet-button img[data-reaction="squish"]{animation:pet-squish .55s ease both}
- .ally-pet-button img[data-reaction="wave"]{animation:pet-wave .8s ease both}
- .ally-pet-button img[data-reaction="heart"]{animation:pet-heart .7s ease both}
- .ally-pet-button img[data-reaction="land"]{animation:pet-land .38s ease both}
+ .ally-pet-button > img[data-reaction="bounce"]{animation:pet-bounce .65s ease both}
+ .ally-pet-button > img[data-reaction="spin"]{animation:pet-spin .7s ease both}
+ .ally-pet-button > img[data-reaction="dance"]{animation:pet-dance .8s ease both}
+ .ally-pet-button > img[data-reaction="squish"]{animation:pet-squish .55s ease both}
+ .ally-pet-button > img[data-reaction="wave"]{animation:pet-wave .8s ease both}
+ .ally-pet-button > img[data-reaction="heart"]{animation:pet-heart .7s ease both}
+ .ally-pet-button > img[data-reaction="land"]{animation:pet-land .38s ease both}
  @keyframes pet-bounce{0%,100%{transform:none}20%{transform:scale(1.16,.83)}50%{transform:translateY(-21px) scale(.93,1.08)}78%{transform:scale(1.12,.88)}}
  @keyframes pet-spin{0%,100%{transform:none}45%{transform:translateY(-9px) rotate(180deg)}99%{transform:rotate(360deg)}}
  @keyframes pet-dance{0%,100%{transform:none}20%,60%{transform:translateX(-5px) rotate(-17deg)}40%,80%{transform:translateX(5px) rotate(17deg)}}
@@ -50,25 +50,25 @@ body:has(dialog[open]) .ally-pet{display:none}
 .ally-pet-sound:disabled{opacity:.55;cursor:default}
 .ally-pet[data-minimized] .ally-pet-sound,.ally-pet[data-dragging] .ally-pet-sound{display:none}
 .ally-pet[data-speaking] .ally-pet-speech{border-color:var(--green)}
-@media(prefers-reduced-motion:no-preference){.ally-pet[data-speaking] .ally-pet-button img:not([data-reaction]){animation:ally-speaking .38s ease-in-out infinite alternate}@keyframes ally-speaking{from{transform:scale(1)}to{transform:scale(1.035,.96);filter:drop-shadow(0 0 7px #b1f87470)}}}
+@media(prefers-reduced-motion:no-preference){.ally-pet[data-speaking] .ally-pet-button > img:not([data-reaction]){animation:ally-speaking .38s ease-in-out infinite alternate}@keyframes ally-speaking{from{transform:scale(1)}to{transform:scale(1.035,.96);filter:drop-shadow(0 0 7px #b1f87470)}}}
 
 /* Expanded local mascot interactions. The pet never moves itself over controls. */
 .ally-pet-effect{position:absolute;z-index:2;left:50%;top:7%;font-size:1.35rem;line-height:1;font-weight:800;color:#b1f874;text-shadow:0 0 7px #b1f87499;pointer-events:none;opacity:0;white-space:nowrap;transform:translateX(-50%)}
 .ally-pet[data-minimized] .ally-pet-effect,.ally-pet[data-dragging] .ally-pet-effect{display:none}
 @media(prefers-reduced-motion:no-preference){
  .ally-pet-effect.visible{animation:pet-particle 1.1s ease-out both}
- .ally-pet[data-fast] .ally-pet-button img{transform:rotate(-25deg) scale(1.09);filter:drop-shadow(9px 5px 9px #b1f87490)}
+ .ally-pet[data-fast] .ally-pet-button > img{transform:rotate(-25deg) scale(1.09);filter:drop-shadow(9px 5px 9px #b1f87490)}
  .ally-pet[data-holding] .ally-pet-button{background:radial-gradient(ellipse,#b1f8742a,transparent 68%)}
- .ally-pet-button img[data-reaction="rocket"]{animation:pet-rocket .95s ease both}
- .ally-pet-button img[data-reaction="wobble"]{animation:pet-wobble .82s ease both}
- .ally-pet-button img[data-reaction="charge"]{animation:pet-charge .95s ease both}
- .ally-pet-button img[data-reaction="peek"]{animation:pet-peek .9s ease both}
- .ally-pet-button img[data-reaction="victory"]{animation:pet-victory 1.05s ease both}
- .ally-pet-button img[data-reaction="laugh"]{animation:pet-laugh .78s ease both}
- .ally-pet-button img[data-reaction="float"]{animation:pet-float 1.5s ease both}
- .ally-pet-button img[data-reaction="sleep"]{animation:pet-sleep 1.6s ease both}
- .ally-pet-button img[data-reaction="shake"]{animation:pet-shake .65s ease both}
- .ally-pet-button img[data-reaction="bow"]{animation:pet-bow .9s ease both}
+ .ally-pet-button > img[data-reaction="rocket"]{animation:pet-rocket .95s ease both}
+ .ally-pet-button > img[data-reaction="wobble"]{animation:pet-wobble .82s ease both}
+ .ally-pet-button > img[data-reaction="charge"]{animation:pet-charge .95s ease both}
+ .ally-pet-button > img[data-reaction="peek"]{animation:pet-peek .9s ease both}
+ .ally-pet-button > img[data-reaction="victory"]{animation:pet-victory 1.05s ease both}
+ .ally-pet-button > img[data-reaction="laugh"]{animation:pet-laugh .78s ease both}
+ .ally-pet-button > img[data-reaction="float"]{animation:pet-float 1.5s ease both}
+ .ally-pet-button > img[data-reaction="sleep"]{animation:pet-sleep 1.6s ease both}
+ .ally-pet-button > img[data-reaction="shake"]{animation:pet-shake .65s ease both}
+ .ally-pet-button > img[data-reaction="bow"]{animation:pet-bow .9s ease both}
  @keyframes pet-particle{0%{opacity:0;transform:translate(-50%,8px) scale(.5)}22%{opacity:1;transform:translate(-50%,-6px) scale(1.15)}75%{opacity:.9}100%{opacity:0;transform:translate(-50%,-35px) scale(.85)}}
  @keyframes pet-rocket{0%,100%{transform:none}20%{transform:scale(1.13,.77)}46%{transform:translateY(-28px) scale(.85,1.15);filter:drop-shadow(0 13px 8px #b1f874aa)}70%{transform:translateY(-12px) rotate(9deg)}88%{transform:scale(1.1,.85)}}
  @keyframes pet-wobble{0%,100%{transform:none}18%{transform:rotate(-25deg)}38%{transform:rotate(21deg)}58%{transform:rotate(-13deg)}78%{transform:rotate(7deg)}}
@@ -80,4 +80,27 @@ body:has(dialog[open]) .ally-pet{display:none}
  @keyframes pet-sleep{0%,100%{transform:none;opacity:1}40%,75%{transform:scale(1.03,.86) rotate(9deg);opacity:.73}}
  @keyframes pet-shake{0%,100%{transform:none}15%,45%,75%{transform:translateX(-5px) rotate(-7deg)}30%,60%,90%{transform:translateX(5px) rotate(7deg)}}
  @keyframes pet-bow{0%,100%{transform:none}35%,65%{transform:scaleY(.75) translateY(3px) rotate(7deg)}}
+}
+
+/* Triple-tap: original miniature handheld prop and animated arcade race. */
+.ally-pet-console{display:none;position:absolute;z-index:2;pointer-events:none;top:43px;left:50%;width:66px;aspect-ratio:144/64;transform:translateX(-50%);transform-origin:50% 70%;filter:drop-shadow(0 2px 3px #000b)}
+.ally-pet-console img{display:block;width:100%;height:100%;object-fit:contain;pointer-events:none}
+.ally-pet-game-screen{position:absolute;left:29.2%;top:20.3%;width:41.6%;height:57.8%;overflow:hidden;border-radius:1px;background:linear-gradient(90deg,#18372a 0 16%,#30354b 16% 84%,#18372a 84%);box-shadow:0 0 4px #b1f87477}
+.ally-pet-game-track{position:absolute;inset:-100% 48% 0;width:7%;background:repeating-linear-gradient(to bottom,#d5fca9 0 4px,transparent 4px 9px)}
+.ally-pet-game-racer,.ally-pet-game-opponent{position:absolute;width:18%;height:34%;border-radius:1px;box-shadow:0 0 2px #fff5}
+.ally-pet-game-racer{background:#a6f65b;bottom:8%;left:29%;border-top:2px solid #d5fca9}
+.ally-pet-game-opponent{background:#d975ff;top:-35%;left:59%;border-top:2px solid #f5bbff}
+.ally-pet[data-gaming] .ally-pet-console{display:block}
+.ally-pet[data-gaming] .ally-pet-button > img{transform:translateY(-3px)}
+@media(prefers-reduced-motion:no-preference){
+ .ally-pet[data-gaming] .ally-pet-console{animation:pet-console-sequence 6.2s ease-in-out both}
+ .ally-pet[data-gaming] .ally-pet-button > img{animation:pet-gaming-body 6.2s ease-in-out both}
+ .ally-pet[data-gaming] .ally-pet-game-track{animation:pet-track .42s linear infinite}
+ .ally-pet[data-gaming] .ally-pet-game-racer{animation:pet-racer 1.65s ease-in-out infinite alternate}
+ .ally-pet[data-gaming] .ally-pet-game-opponent{animation:pet-opponent 1.28s linear infinite}
+ @keyframes pet-console-sequence{0%{opacity:0;transform:translate(-50%,18px) scale(.25) rotate(-17deg)}9%{opacity:1;transform:translate(-50%,-6px) scale(1.13) rotate(6deg)}16%,27%,51%,75%,88%{opacity:1;transform:translate(-50%,0) rotate(-3deg)}39%,63%,82%{opacity:1;transform:translate(-50%,1px) rotate(4deg)}95%{opacity:1;transform:translate(-50%,0) scale(.9)}100%{opacity:0;transform:translate(-50%,17px) scale(.2)}}
+ @keyframes pet-gaming-body{0%,100%{transform:none}10%{transform:translateY(-8px) scale(1.03)}20%,40%,60%,80%{transform:translateY(-3px) rotate(-3deg)}30%,50%,70%,90%{transform:translateY(-3px) rotate(3deg)}}
+ @keyframes pet-track{from{transform:translateY(0)}to{transform:translateY(9px)}}
+ @keyframes pet-racer{0%,15%{left:29%}45%,65%{left:58%}100%{left:31%}}
+ @keyframes pet-opponent{from{top:-35%}to{top:105%}}
 }
