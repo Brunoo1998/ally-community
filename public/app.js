@@ -276,6 +276,18 @@ function actions(parent,item,kind){
   }
   return box;
 }
+function visitLabel(views){
+  const count=Math.max(0,Number(views)||0);
+  return count+' '+(count===1?'visita única':'visitas únicas');
+}
+async function recordView(post,element){
+  try{
+    const response=await api('visits',{post});
+    if(element.isConnected)element.textContent='👁 '+visitLabel(response.views);
+  }catch{
+    // El contador es informativo: un fallo no debe bloquear el hilo.
+  }
+}
 function card(parent,item,detail=false){
   const article=el('article',undefined,parent);article.className='card';
   const info=el('div',undefined,article);
@@ -298,9 +310,13 @@ function card(parent,item,detail=false){
     const tags=JSON.parse(item.tags);
     if(tags.length)el('small',tags.map(v=>'#'+v).join(' '),info);
   }
-  el('p',item.replies+' '+(item.replies===1?'comentario':'comentarios'),info);
+  const metrics=el('div',undefined,info);metrics.className='post-metrics';
+  el('span',item.replies+' '+(item.replies===1?'comentario':'comentarios'),metrics);
+  const views=el('span','👁 '+visitLabel(item.views),metrics);views.className='post-view-count';
+  views.title='Visitas únicas aproximadas; un perfil o navegador se cuenta una vez';
   votes(info,item,'post');
   if(detail)actions(info,item,'post');
+  return views;
 }
 async function comments(parent,post,parentId,sort,after){
   const query=new URLSearchParams({post,sort});
@@ -332,6 +348,8 @@ async function comments(parent,post,parentId,sort,after){
 async function list(after){
   const current=++generation;
   const query=new URLSearchParams(new FormData(form));if(game)query.set('game',game);
+  const ranking=query.get('sort')==='views';
+  $('#feed h1').textContent=ranking?'Ranking de los más visitados':'Publicaciones';
   if(after)query.set('after',after);
   const {rows,next}=await api('posts?'+query);
   if(current!==generation)return;
@@ -351,8 +369,10 @@ async function load(){
   thread.hidden=false;
   thread.replaceChildren();
   link(thread,'Todas las publicaciones','/');
-  const post=await api('posts/'+encodeURIComponent(postID));card(thread,post,true);
+  const post=await api('posts/'+encodeURIComponent(postID));
+  const counter=card(thread,post,true);
   if(post.status==='pending'){el('p','Pendiente de revisión por moderación.',thread);return;}
+  void recordView(post.id,counter);
   if(!post.closed)button(thread,'Comentar',()=>session(()=>editor({replyTo:{post:post.id}})));
   else el('p','Debate cerrado.',thread);
   const sort=select(thread,'Orden de comentarios','comment-sort',[['recent','Recientes'],['popular','Populares']]);
@@ -364,6 +384,7 @@ async function init(){
   meta=await api('meta');
   updateProfile();$('#profile').onclick=()=>attempt(showProfile);
   for(const c of meta.categories)el('option',c.name,form.elements.category).value=c.id;
+  if(['recent','popular','trend','comments','views'].includes(params.get('sort')))form.elements.sort.value=params.get('sort');
   $('#create').onclick=()=>attempt(()=>session(()=>editor()));
   $('#notices').onclick=()=>attempt(async()=>{
     const data=await api('notices');open('Notificaciones');
@@ -375,9 +396,19 @@ async function init(){
     const node=$('#stats div');
     if($('#stats').open&&!node.hasChildNodes())void attempt(async()=>{
       const data=await api('stats');
-      el('p',data.totals.posts+' publicaciones · '+data.totals.comments+' comentarios · '+data.totals.configurations+' configuraciones · '+data.totals.recentDebates+' debates recientes',node);
+      el('p',data.totals.posts+' publicaciones · '+data.totals.comments+' comentarios · '+visitLabel(data.totals.uniqueViews)+' registradas · '+data.totals.configurations+' configuraciones · '+data.totals.recentDebates+' debates recientes',node);
       for(const entry of data.categories)el('p',entry.name+' · '+entry.total,node);
       for(const entry of data.best){const p=el('p',undefined,node);link(p,entry.title+' · '+entry.score+' votos','/?post='+entry.id);}
+      el('h3','Top 5 de publicaciones más visitadas',node);
+      if(!data.mostVisited.length)el('p','Todavía no hay visitas registradas.',node);
+      else{
+        const top=el('ol',undefined,node);top.className='most-visited-list';
+        for(const entry of data.mostVisited){
+          const item=el('li',undefined,top);
+          link(item,entry.title,'/?post='+entry.id);
+          el('small','👁 '+visitLabel(entry.views),item);
+        }
+      }
     });
   });
   if(game){
