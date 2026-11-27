@@ -221,7 +221,7 @@ async function route(request,env){
     if(who.blocked_until>timestamp)error('Esta sesión está restringida.',403);
     const cutoff=timestamp-2592000;
     async function cleanSocial(){
-      await db.batch([sql('DELETE FROM private_messages WHERE id IN (SELECT id FROM private_messages WHERE created<? LIMIT 200)',cutoff),sql('DELETE FROM friend_activity WHERE rowid IN (SELECT rowid FROM friend_activity WHERE last_active<? LIMIT 100)',cutoff),sql('DELETE FROM friend_links WHERE id IN (SELECT id FROM friend_links WHERE accepted=0 AND created<? LIMIT 100)',cutoff)]);
+      await db.batch([sql('DELETE FROM private_messages WHERE id IN (SELECT id FROM private_messages WHERE created<? LIMIT 200)',cutoff),sql('DELETE FROM friend_activity WHERE rowid IN (SELECT rowid FROM friend_activity WHERE last_active<? LIMIT 100)',cutoff),sql('DELETE FROM friend_links WHERE id IN (SELECT id FROM friend_links WHERE accepted=0 AND created<? LIMIT 100)',cutoff),sql('DELETE FROM friend_outcome_notices WHERE id IN (SELECT id FROM friend_outcome_notices WHERE created<? LIMIT 100)',cutoff)]);
     }
     const related=(target)=>first('SELECT id,a,b,requested_by,accepted FROM friend_links WHERE a=? AND b=?',...[owner,target].sort());
     const participant=async username=>{
@@ -232,9 +232,17 @@ async function route(request,env){
     };
     if(resource==='friends'){
       if(method==='GET'&&!action){
+        if(id==='notifications'){
+          const requests=await all("SELECT f.id,p.username,f.created FROM friend_links f JOIN profiles p ON p.owner=f.requested_by WHERE f.accepted=0 AND f.requested_by<>? AND (f.a=? OR f.b=?) AND f.created>=? ORDER BY f.id DESC",owner,owner,owner,cutoff);
+          const chats=await all("SELECT f.id,p.username,count(*) AS unread,max(m.created) AS created FROM friend_links f JOIN private_messages m ON m.friendship=f.id JOIN profiles p ON p.owner=CASE WHEN f.a=? THEN f.b ELSE f.a END WHERE f.accepted=1 AND (f.a=? OR f.b=?) AND m.sender<>? AND m.read_at IS NULL AND m.created>=? GROUP BY f.id,p.username ORDER BY created DESC",owner,owner,owner,owner,cutoff);
+          const outcomes=await all("SELECT n.id,n.kind,n.request_id AS requestId,p.username,n.created,n.read_at,CASE WHEN f.accepted=1 AND (f.a=? OR f.b=?) THEN f.id ELSE NULL END AS chatId FROM friend_outcome_notices n JOIN profiles p ON p.owner=n.actor LEFT JOIN friend_links f ON f.id=n.request_id WHERE n.owner=? AND n.created>=? ORDER BY n.id DESC LIMIT 50",owner,owner,owner,cutoff);
+          const count=await first('SELECT count(*) AS n FROM friend_outcome_notices WHERE owner=? AND read_at IS NULL AND created>=?',owner,cutoff);
+          return json({requests,chats,outcomes,unreadOutcomes:Number(count.n)});
+        }
         if(id==='summary'){
           const row=await first('SELECT (SELECT count(*) FROM friend_links WHERE accepted=0 AND created>=? AND requested_by<>? AND (a=? OR b=?)) AS requests,(SELECT count(*) FROM private_messages m JOIN friend_links f ON f.id=m.friendship WHERE f.accepted=1 AND (f.a=? OR f.b=?) AND m.sender<>? AND m.read_at IS NULL AND m.created>=?) AS unread',cutoff,owner,owner,owner,owner,owner,owner,cutoff);
-          return json({requests:Number(row.requests),unread:Number(row.unread)});
+          const outcomes=await first('SELECT count(*) AS n FROM friend_outcome_notices WHERE owner=? AND read_at IS NULL AND created>=?',owner,cutoff);
+          return json({requests:Number(row.requests),unread:Number(row.unread),outcomes:Number(outcomes.n)});
         }
         if(id)error('Ruta no encontrada.',404);
         if(Math.random()<.1)await cleanSocial();
@@ -246,6 +254,11 @@ async function route(request,env){
       }
       if(method!=='POST'||action)error('Ruta no encontrada.',404);
       const data=await body(request);
+      if(id==='notifications-read'){
+        const through=positive(data.through);if(!through)error('Aviso no válido.');
+        await run('UPDATE friend_outcome_notices SET read_at=? WHERE owner=? AND id<=? AND read_at IS NULL AND created>=?',timestamp,owner,through,cutoff);
+        return json({ok:true});
+      }
       if(id==='privacy'){
         if(typeof data.enabled!=='boolean')error('Preferencia no válida.');
         if(data.enabled&&await presencePreference()!==1)error('Activa primero tu estado en línea en Mi perfil.');
@@ -263,9 +276,14 @@ async function route(request,env){
       if(id==='unblock'){await run('DELETE FROM friend_blocks WHERE owner=? AND other=?',owner,target);return json({ok:true});}
       if(id==='request')await cleanSocial();
       const existing=await related(target);
+      if(data.requestId!==undefined&&(!existing||positive(data.requestId)!==existing.id))error('Solicitud no disponible.',404);
       if(id==='remove'||id==='decline'){
         if(!existing||(id==='remove'?!existing.accepted:!!existing.accepted))error('Solicitud o amistad no disponible.',404);
-        await run('DELETE FROM friend_links WHERE id=? AND (a=? OR b=?) AND accepted=?',existing.id,owner,owner,id==='remove'?1:0);
+        if(id==='decline'){
+          // Only a recipient's explicit rejection creates a notice. Cancellation,
+          // expiry and blocking do not reveal a separate rejection.
+          await db.batch([sql("INSERT OR IGNORE INTO friend_outcome_notices(owner,actor,request_id,kind,created) SELECT requested_by,?,id,'declined',? FROM friend_links WHERE id=? AND accepted=0 AND requested_by<>? AND (a=? OR b=?) AND created>=?",owner,timestamp,existing.id,owner,owner,owner,cutoff),sql('DELETE FROM friend_links WHERE id=? AND (a=? OR b=?) AND accepted=0',existing.id,owner,owner)]);
+        }else await run('DELETE FROM friend_links WHERE id=? AND (a=? OR b=?) AND accepted=1',existing.id,owner,owner);
         return json({ok:true});
       }
       if(person.blocked_until>timestamp||await first('SELECT 1 AS yes FROM friend_blocks WHERE (owner=? AND other=?) OR (owner=? AND other=?)',owner,target,target,owner))error('Usuario no disponible.',404);

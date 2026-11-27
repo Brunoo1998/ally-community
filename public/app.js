@@ -181,7 +181,7 @@ function showPresenceChoice(){
   button(controls,'Mostrar mi estado',()=>changePresence(true)).className='primary';
   button(controls,'Prefiero ocultarlo',()=>changePresence(false));
 }
-let friendsView=null,chatView=null,socialBusy=false;
+let friendsView=null,chatView=null,socialBusy=false,noticeView=null,socialNoticeCount=0,adminNoticeCount=0;
 function socialBadge(total){
   const node=$('#friends'),count=Number(total)||0;
   let badge=node.querySelector('.social-unread');
@@ -191,7 +191,7 @@ function socialBadge(total){
 }
 async function refreshSocialBadge(){
   if(!meta?.profile||document.hidden||socialBusy)return;
-  socialBusy=true;try{const d=await api('friends/summary');socialBadge(d.requests+d.unread);}catch{}finally{socialBusy=false;}
+  socialBusy=true;try{const d=await api('friends/summary');socialBadge(d.requests+d.unread);socialNoticeCount=d.requests+d.unread+d.outcomes;paintNoticeCount();}catch{}finally{socialBusy=false;}
 }
 function activeView(view){return modal.open&&view?.isConnected;}
 function friendName(parent,username){
@@ -213,7 +213,7 @@ async function openFriends(prefill=''){
   add.onsubmit=e=>{e.preventDefault();if(submit.disabled)return;submit.disabled=true;void attempt(async()=>{try{await api('friends/request',{username:username.value.trim()});username.value='';await reload();}finally{submit.disabled=false;}});};
   async function act(action,name,warning){
     if(warning&&!confirm(warning))return;
-    await api('friends/'+action,{username:name});await reload();
+    await api('friends/'+action,{username:name});await reload();void refreshSocialBadge();
   }
   let previous='',refreshing=false;
   async function reload(force=true){
@@ -318,7 +318,7 @@ function updateProfile(){
   $('#moderation').hidden=p?.role!=='admin';
   if(p?.role==='admin')void refreshAdminNoticeCount();else setAdminNoticeCount(0);
   if(p)presenceBadge(node,p.username);
-  $('#friends').hidden=!p;if(p)void refreshSocialBadge();else socialBadge(0);
+  $('#friends').hidden=!p;if(p)void refreshSocialBadge();else{socialBadge(0);socialNoticeCount=0;paintNoticeCount();}
   presenceEpoch++;showPresenceChoice();schedulePresence();
 }
 async function refreshProfile(){meta=await api('meta');updateProfile();}
@@ -796,25 +796,66 @@ async function load(){
   sort.onchange=()=>attempt(async()=>{replies.replaceChildren();await comments(replies,post.id,null,sort.value);});
   await comments(replies,post.id,null,sort.value);
 }
-function setAdminNoticeCount(value){
-  const button=$('#notices');
-  if(!button)return;
-  let badge=button.querySelector('.admin-unread');
-  const count=Number(value)||0;
-  if(count<=0){
-    badge?.remove();button.removeAttribute('aria-label');return;
-  }
-  if(!badge){badge=el('span',undefined,button);badge.className='admin-unread';badge.setAttribute('aria-hidden','true');}
+function paintNoticeCount(){
+  const node=$('#notices');if(!node)return;
+  let badge=node.querySelector('.admin-unread');
+  const count=adminNoticeCount+socialNoticeCount;
+  if(count<=0){badge?.remove();node.setAttribute('aria-label','Notificaciones');return;}
+  if(!badge){badge=el('span',undefined,node);badge.className='admin-unread';badge.setAttribute('aria-hidden','true');}
   badge.textContent=count>99?'99+':String(count);
-  button.setAttribute('aria-label','Notificaciones: '+count+' avisos de administración sin leer');
+  node.setAttribute('aria-label','Notificaciones: '+count+' avisos sin leer');
 }
+function setAdminNoticeCount(value){adminNoticeCount=Number(value)||0;paintNoticeCount();}
 async function refreshAdminNoticeCount(){
   if(meta?.profile?.role!=='admin'||document.hidden)return;
   try{const data=await api('admin-notices?count=1');if(meta?.profile?.role==='admin')setAdminNoticeCount(data.unread);}catch{}
 }
 async function showNoticeInbox(){
   open('Notificaciones');
-  const target=el('section',undefined,content);
+  const target=el('section',undefined,content);noticeView=target;
+  if(meta?.profile){
+    const social=el('section',undefined,target);social.className='social-inbox';
+    el('h3','Amigos y mensajes',social);
+    const list=el('div',undefined,social);list.className='social-inbox-list';
+    let previous='',busy=false;
+    async function loadSocial(force=true){
+      if(busy||!activeView(target)||document.hidden)return;
+      busy=true;
+      try{
+        const data=await api('friends/notifications');
+        if(!activeView(target))return;
+        const unread=data.chats.reduce((n,r)=>n+Number(r.unread),0);
+        socialBadge(data.requests.length+unread);
+        socialNoticeCount=data.requests.length+unread+data.unreadOutcomes;paintNoticeCount();
+        const signature=JSON.stringify(data);
+        if(!force&&(signature===previous||list.contains(document.activeElement)))return;
+        previous=signature;list.replaceChildren();
+        const entries=[...data.requests.map(r=>({...r,type:'request'})),...data.chats.map(r=>({...r,type:'chat'})),...data.outcomes.map(r=>({...r,type:r.kind}))].sort((a,b)=>b.created-a.created);
+        if(!entries.length)el('p','No tienes novedades de amigos o mensajes.',list).className='social-hint';
+        for(const row of entries){
+          const card=el('article',undefined,list);card.className='social-notice'+(row.read_at?'':' unread');
+          const labels={request:'Solicitud de amistad',accepted:'Solicitud aceptada',declined:'Solicitud rechazada',chat:'Mensaje privado'};
+          el('small',labels[row.type],card).className='social-notice-label';
+          el('time',new Date(row.created*1000).toLocaleString('es-ES'),card);
+          const messages={request:'@'+row.username+' quiere añadirte como amigo.',accepted:'@'+row.username+' ha aceptado tu solicitud de amistad.',declined:'@'+row.username+' ha rechazado tu solicitud de amistad.',chat:'@'+row.username+' te ha enviado '+row.unread+(Number(row.unread)===1?' mensaje nuevo.':' mensajes nuevos.')};
+          el('p',messages[row.type],card);
+          const actions=el('div',undefined,card);actions.className='friend-actions';
+          if(row.type==='request'){
+            for(const [action,label] of [['accept','Aceptar'],['decline','Rechazar']]){
+              const btn=button(actions,label,async()=>{if(btn.disabled)return;for(const b of actions.querySelectorAll('button'))b.disabled=true;try{await api('friends/'+action,{username:row.username,requestId:row.id});await loadSocial();$('#modal-status').textContent=action==='accept'?'Solicitud aceptada.':'Solicitud rechazada.';}finally{for(const b of actions.querySelectorAll('button'))b.disabled=false;}});
+              if(action==='accept')btn.className='primary';
+            }
+          }
+          if(row.type==='chat'||(row.type==='accepted'&&row.chatId))button(actions,'Abrir chat',()=>openChat(row.type==='chat'?row.id:row.chatId,row.username)).className='primary';
+        }
+        const latest=data.outcomes[0]?.id;
+        if(data.unreadOutcomes&&latest)button(list,'Marcar respuestas de amistad como leídas',async()=>{await api('friends/notifications-read',{through:latest});await loadSocial();});
+      }finally{busy=false;}
+    }
+    target.refreshNotices=()=>loadSocial(false);
+    try{await loadSocial();}catch(e){if(social.isConnected)el('p',e.message,list);}
+  }
+  if(!target.isConnected)return;
   if(meta?.profile?.role==='admin'){
     const admin=el('section',undefined,target);admin.className='admin-inbox';
     const head=el('div',undefined,admin);head.className='admin-inbox-heading';
@@ -863,8 +904,8 @@ async function init(){
   $('#create').onclick=()=>attempt(()=>session(()=>editor()));
   $('#notices').onclick=()=>attempt(showNoticeInbox);
   $('#friends').onclick=()=>attempt(()=>openFriends());
-  setInterval(()=>{if(!document.hidden){if(activeView(chatView))void chatView.refreshChat?.();else if(activeView(friendsView))void friendsView.refreshFriends?.().catch(()=>{});}},15000);
-  setInterval(()=>void refreshSocialBadge(),60000);
+  setInterval(()=>{if(!document.hidden){if(activeView(chatView))void chatView.refreshChat?.();else if(activeView(friendsView))void friendsView.refreshFriends?.().catch(()=>{});else if(activeView(noticeView))void noticeView.refreshNotices?.().catch(()=>{});}},15000);
+  setInterval(()=>void refreshSocialBadge(),30000);
   window.addEventListener('focus',()=>void refreshSocialBadge());
   window.addEventListener('focus',()=>void refreshAdminNoticeCount());
   document.addEventListener('visibilitychange',()=>void refreshAdminNoticeCount());

@@ -19,6 +19,7 @@ db.exec(readFileSync(new URL('../migrations/0008_admin_notifications.sql',import
 db.exec(readFileSync(new URL('../migrations/0009_ally_bot.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0010_presence.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0011_friends.sql',import.meta.url),'utf8'));
+db.exec(readFileSync(new URL('../migrations/0012_social_notifications.sql',import.meta.url),'utf8'));
 const env={
   TURNSTILE_SITE_KEY:'test-site-key',TURNSTILE_SECRET:'test-secret',
   RATE_SECRET:'r'.repeat(64),ADMIN_TOKEN:'a'.repeat(64),
@@ -304,13 +305,27 @@ try{
   const incoming=(await req('friends',{cookie:b})).result.rows[0];
   assert.equal(incoming.username,'TestGamer');assert.equal(incoming.outgoing,false);assert.equal(incoming.accepted,false);
   assert.equal((await req('friends/summary',{cookie:b})).result.requests,1);
+  assert.equal((await req('friends/notifications',{cookie:b})).result.requests[0].username,'TestGamer');
+  assert.equal((await req('friends/notifications',{cookie:a})).result.requests.length,0);
+  await req('friends/notifications',{status:401});
   await req('chat/'+incoming.id,{cookie:a,status:404});
   await req('friends/accept',{cookie:a,data:{username:'OtherGamer'},status:404});
-  await req('friends/accept',{cookie:b,data:{username:'TestGamer'}});
+  await req('friends/accept',{cookie:b,data:{username:'TestGamer',requestId:incoming.id+1},status:404});
+  await req('friends/accept',{cookie:b,data:{username:'TestGamer',requestId:incoming.id}});
+  const acceptedNotice=(await req('friends/notifications',{cookie:a})).result.outcomes[0];
+  assert.equal(acceptedNotice.kind,'accepted');assert.equal(acceptedNotice.username,'OtherGamer');assert.equal(acceptedNotice.chatId,incoming.id);
+  assert.equal((await req('friends/notifications',{cookie:b})).result.requests.length,0);
+  await req('friends/notifications-read',{cookie:b,data:{through:acceptedNotice.id}});
+  assert.equal((await req('friends/summary',{cookie:a})).result.outcomes,1);
+  await req('friends/notifications-read',{cookie:a,data:{through:acceptedNotice.id}});
+  assert.equal((await req('friends/summary',{cookie:a})).result.outcomes,0);
   await req('chat/'+incoming.id,{status:401});
   await req('chat/'+incoming.id+'/send',{cookie:a,origin:'https://third-party.test',data:{body:'Hola'},status:403});
   const sent=(await req('chat/'+incoming.id+'/send',{cookie:a,data:{body:'Hola, amigo'},status:201})).result.id;
   assert.equal((await req('friends/summary',{cookie:b})).result.unread,1);
+  const chatNotice=(await req('friends/notifications',{cookie:b})).result.chats[0];
+  assert.equal(chatNotice.username,'TestGamer');assert.equal(chatNotice.id,incoming.id);assert.equal(chatNotice.unread,1);assert.ok(!('body' in chatNotice));
+  assert.equal((await req('friends/notifications',{cookie:a})).result.chats.length,0);
   // A third, authenticated user cannot read, send or mark messages in this chat.
   const thirdOwner='d'.repeat(64),thirdKey='c'.repeat(64);
   const thirdCredential=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(thirdKey))),v=>v.toString(16).padStart(2,'0')).join('');
@@ -318,6 +333,7 @@ try{
   db.prepare('INSERT INTO profiles(owner,username,recovery_hash,created) VALUES(?,?,?,?)').run(thirdOwner,'ThirdGamer','e'.repeat(64),Math.floor(Date.now()/1000));
   db.prepare('INSERT INTO profile_devices(id,owner,expires) VALUES(?,?,?)').run(thirdCredential,thirdOwner,253402300799);
   const thirdCookie='__Host-ally_session='+thirdKey;
+  const outsider=(await req('friends/notifications',{cookie:thirdCookie})).result;assert.deepEqual(outsider.chats,[]);assert.deepEqual(outsider.outcomes,[]);assert.deepEqual(outsider.requests,[]);
   await req('chat/'+incoming.id,{cookie:thirdCookie,status:404});
   await req('chat/'+incoming.id+'/send',{cookie:thirdCookie,data:{body:'Intruso'},status:404});
   await req('chat/'+incoming.id+'/read',{cookie:thirdCookie,data:{through:sent},status:404});
@@ -327,6 +343,7 @@ try{
   assert.ok(!('sender' in received));
   await req('chat/'+incoming.id+'/read',{cookie:b,data:{through:sent}});
   assert.equal((await req('friends/summary',{cookie:b})).result.unread,0);
+  assert.equal((await req('friends/notifications',{cookie:b})).result.chats.length,0);
   assert.equal((await req('chat/'+incoming.id,{cookie:a})).result.rows[0].read,1);
   await req('friends/privacy',{cookie:a,data:{enabled:true},status:400});
   await req('presence/preference',{cookie:a,data:{enabled:true}});
@@ -349,6 +366,11 @@ try{
   await req('friends/request',{cookie:a,data:{username:'OtherGamer'},status:201});
   await req('friends/decline',{cookie:b,data:{username:'TestGamer'}});
   assert.deepEqual((await req('friends',{cookie:b})).result.rows,[]);
+  assert.equal((await req('friends/notifications',{cookie:a})).result.outcomes[0].kind,'declined');
+  await req('friends/request',{cookie:a,data:{username:'OtherGamer'},status:201});
+  await req('friends/decline',{cookie:a,data:{username:'OtherGamer'}});
+  assert.equal((await req('friends/notifications',{cookie:a})).result.outcomes.length,2);
+  assert.equal((await req('friends/notifications',{cookie:b})).result.outcomes.length,0);
   await req('posts',{overrides:{DB:null},status:503});
   console.log('SQLite persistente, dos sesiones, debate, configuración, comentarios, votos, denuncias, moderación y fallos: OK');
 }finally{

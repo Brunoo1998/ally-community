@@ -251,3 +251,13 @@
 @media(min-width:761px){.forum-page .community-nav{display:flex;flex-wrap:wrap;justify-content:flex-end}}
 @media(max-width:760px){.forum-page .community-nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem}.forum-page .community-nav #create{grid-column:1/-1}.forum-page .community-nav:has(#moderation[hidden]) #notices{grid-column:1/-1}.forum-page .community-nav:has(#friends[hidden]) #notices{grid-column:auto}}
 @media(max-width:520px){.forum-page .community-bar .top{padding:.75rem 0;gap:.65rem}.forum-page .community-identity-row{gap:.5rem}.forum-page .community-identity-row .community-brand{gap:.45rem}.forum-page .community-identity-row .community-brand>img{width:36px;height:36px}.forum-page .community-identity-row .brand-name{font-size:.77rem;line-height:1.25;letter-spacing:.015em}.forum-page .community-identity-row .community-brand small{font-size:.64rem;line-height:1.25}.forum-page .community-account{max-width:46%}.forum-page .community-account #profile{font-size:.76rem;padding:.38rem .48rem}.forum-page .community-account #profile .presence-badge{font-size:.64rem}}
+
+/* Private social notifications, separate from moderation. */
+.forum-page .social-inbox{display:grid;gap:.7rem;margin-bottom:1rem}
+.forum-page .social-inbox h3{margin:0;color:#d9ffbd;font-size:1.05rem}
+.forum-page .social-inbox-list{display:grid;gap:.6rem}
+.forum-page .social-notice{border:1px solid #5b486e;border-left:3px solid #8a759f;background:#241c31;border-radius:.7rem;padding:.85rem;min-width:0}
+.forum-page .social-notice.unread{border-left-color:#b7f77e}
+.forum-page .social-notice-label{font-size:.76rem;font-weight:800;color:#d6eac9;margin-right:.65rem}
+.forum-page .social-notice time{font-size:.72rem;color:#c7bad6}
+.forum-page .social-notice p{margin:.5rem 0;overflow-wrap:anywhere;line-height:1.5}
