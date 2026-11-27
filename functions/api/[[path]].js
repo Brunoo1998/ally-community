@@ -313,7 +313,25 @@ async function route(request,env){
     const rows=await all('SELECT '+projection+',substr(p.body,1,320) AS body,'+order+' AS ranking FROM posts p JOIN categories c ON c.id=p.category WHERE '+conditions.join(' AND ')+' ORDER BY '+pinRank+' DESC,ranking DESC,p.id DESC LIMIT '+(limit+1),...values);
     const more=rows.length>limit;
     const visible=rows.slice(0,limit), last=visible.at(-1);
-    return json({rows:visible,next:more?[sort==='views'?0:last.pinned,last.ranking,last.id].join(':'):null});
+
+    // Una sola consulta para los dos comentarios públicos más recientes de
+    // cada publicación de esta página. Incluye respuestas anidadas sin
+    // mostrar comentarios pendientes, ocultos o eliminados.
+    const latestByPost=new Map(visible.map(post=>[post.id,[]]));
+    if(visible.length){
+      const ids=visible.map(post=>post.id);
+      const placeholders=ids.map(()=>'?').join(',');
+      const recent=await all(`SELECT id,post,body,bodyLength,created,username,role FROM (
+        SELECT cm.id,cm.post,substr(cm.body,1,601) AS body,
+          length(cm.body) AS bodyLength,cm.created,pr.username,pr.role,
+          row_number() OVER (PARTITION BY cm.post ORDER BY cm.created DESC,cm.id DESC) AS position
+        FROM comments cm LEFT JOIN profiles pr ON pr.owner=cm.owner
+        WHERE cm.status='public' AND cm.post IN (${placeholders})
+      ) WHERE position<=2 ORDER BY post,position`,...ids);
+      for(const comment of recent)latestByPost.get(comment.post)?.push(comment);
+    }
+    const feed=visible.map(post=>({...post,latestComments:latestByPost.get(post.id)||[]}));
+    return json({rows:feed,next:more?[sort==='views'?0:last.pinned,last.ranking,last.id].join(':'):null});
   }
   if(resource==='comments'&&method==='GET'){
     const post=positive(query.get('post')), parent=positive(query.get('parent'));
