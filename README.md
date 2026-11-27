@@ -20,6 +20,17 @@ Requisitos para la prueba de integración local: Node.js 24. Ejecuta `node tests
 
 `integration/ally-lab.patch` se preparó sobre el commit `358c4418be1f6fc3b8f27cd72ed1311a082fd7a2`. Añade «Comunidad» al menú y enlaces por ID de juego desde las fichas. El borrador toma la resolución, calidad y opciones identificables del preajuste visible y permite editarlas. Las FPS observadas quedan para el usuario. Aplica con `git apply --check ruta/ally-lab.patch` y `git apply ruta/ally-lab.patch` después de verificar el dominio y las escrituras en producción. Comprueba que la ficha de ida y vuelta funciona en ambas superficies de Ally Lab.
 
+## Acceder al mismo perfil desde otro dispositivo
+
+Se conserva el flujo existente de **código de recuperación** y se añade otra opción independiente: **nombre de usuario + clave de acceso entre dispositivos**.
+
+1. En un dispositivo donde el usuario ya tenga la sesión iniciada, abrir **Mi perfil → Generar clave para otros dispositivos**. El servidor genera un secreto criptográficamente aleatorio de 32 bytes (64 caracteres hexadecimales), lo devuelve una sola vez y guarda su SHA-256 en `profiles.device_key_hash`. Se debe copiar a un gestor de contraseñas; no se guarda en `localStorage`.
+2. En un segundo navegador o dispositivo, abrir **Elegir nombre → Ya tengo cuenta · Acceder desde otro dispositivo**, completar el desafío Turnstile cuando corresponda y escribir **nombre de usuario + clave**. No se crea un perfil nuevo: se reutilizan las publicaciones, votos, seudónimo y rol anteriores.
+3. En **Mi perfil → Renovar clave**, se emite otro secreto; el anterior deja de servir para futuras entradas. Las sesiones ya establecidas permanecen abiertas. El código de recuperación original es independiente y sigue funcionando.
+4. Si el usuario pierde la clave, puede generar otra desde algún navegador aún autenticado o recuperar su perfil mediante el código de recuperación. Si pierde todos los accesos y el código, no existe recuperación mediante correo: el foro no solicita una dirección de correo electrónico.
+
+La API aplica límites por IP+usuario, almacenados como identificadores HMAC temporales, sin guardar la IP en claro en la tabla de claves. El acceso desde otros dispositivos utiliza cookies de sesión `Secure`, `HttpOnly` y `SameSite=Lax`, con caducidad máxima de 180 días. La migración `0005_device_access.sql` es aditiva y se aplicó a la D1 de producción por API: no se debe repetir el `ALTER TABLE` si la columna ya está presente.
+
 ## Visitas únicas y ranking
 
 El contador se inicia al abrir una publicación completa (`/?post=ID`), no al mostrar tarjetas en el listado. La llamada POST a `/api/visits` requiere origen del propio sitio y valida que el post sea público. La tabla `post_views` identifica una sola visita por publicación y visitante; un disparador incrementa `posts.views` solo cuando se inserta una combinación nueva. Se aplica una cuota temporal por IP seudonimizada con `RATE_SECRET`, pero la IP no se guarda en `post_views`.
