@@ -124,7 +124,7 @@ try{
   await req('posts/'+post+'/delete',{cookie:a,data:{}});
   await req('posts/'+post,{status:404});
   const limited={kind:'post',target:pending.id,value:1};
-  for(let i=0;i<26;i++)await req('vote',{cookie:b,data:limited});
+  for(let i=0;i<24;i++)await req('vote',{cookie:b,data:limited});
   await req('vote',{cookie:b,data:limited,status:429});
   assert.equal((await req('posts/'+pending.id)).result.score,1);
   await req('posts',{overrides:{DB:null},status:503});
