@@ -223,7 +223,8 @@ async function route(request,env){
   }
   if(resource==='posts'&&method==='GET'){
     const projection=`p.id,p.category,c.name AS categoryName,p.title,p.game,p.tags,p.config,p.debate,p.created,p.score,p.replies,p.pinned,p.closed,p.owner=? AS own,(SELECT username FROM profiles WHERE owner=p.owner) AS username,(SELECT role FROM profiles WHERE owner=p.owner) AS role,
-      coalesce((SELECT value FROM votes WHERE owner=? AND kind='post' AND target=p.id),0) AS vote`;
+      coalesce((SELECT value FROM votes WHERE owner=? AND kind='post' AND target=p.id),0) AS vote,
+       (SELECT count(*) FROM votes WHERE kind='post' AND target=p.id AND value=1) AS likes`;
     if(id){
       const item=await first('SELECT '+projection+',p.body,p.status FROM posts p JOIN categories c ON c.id=p.category WHERE p.id=? AND c.hidden=0 AND (p.status=\'public\' OR (p.owner=? AND p.status=\'pending\'))',who?.id??null,who?.id??null,positive(id),who?.id??null);
       if(!item)error('Publicación no disponible.',404);
@@ -254,7 +255,8 @@ async function route(request,env){
     const rows=await all(`SELECT c.id,c.post,c.parent,c.depth,c.created,c.status,CASE WHEN c.status='public' THEN c.body ELSE '' END AS body,
       c.score,c.owner=? AS own,c.owner=p.owner AS author,(SELECT username FROM profiles WHERE owner=c.owner) AS username,(SELECT role FROM profiles WHERE owner=c.owner) AS role,${sort} AS ranking,
       EXISTS(SELECT 1 FROM comments child WHERE child.parent=c.id AND child.status IN ('public','deleted')) AS children,
-      coalesce((SELECT value FROM votes WHERE owner=? AND kind='comment' AND target=c.id),0) AS vote
+      coalesce((SELECT value FROM votes WHERE owner=? AND kind='comment' AND target=c.id),0) AS vote,
+      (SELECT count(*) FROM votes WHERE kind='comment' AND target=c.id AND value=1) AS likes
       FROM comments c JOIN posts p ON p.id=c.post JOIN categories k ON k.id=p.category
       WHERE p.status='public' AND k.hidden=0 AND c.post=? AND c.parent IS ? AND c.status IN ('public','deleted')
       ${cursor?'AND ('+sort+',c.id)<(?,?)':''} ORDER BY ranking DESC,c.id DESC LIMIT 21`,who?.id??null,who?.id??null,post,parent,...(cursor?[+cursor[1],+cursor[2]]:[]));
