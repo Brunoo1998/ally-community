@@ -17,6 +17,12 @@ function el(tag,text,parent){
 function button(parent,text,fn){
   const node=el('button',text,parent);
   node.type='button';
+  if(typeof text==='string'){
+    if(/^(Eliminar|Confirmar eliminación|Quitar foto)/.test(text))node.dataset.variant='danger';
+    else if(/^(Denunciar|Cerrar sesión|Solo quiero leer)/.test(text))node.dataset.variant='quiet';
+    else if(/^(Comentar|Responder|Iniciar debate|Enviar)/.test(text))node.dataset.variant='action';
+    else if(/^Cargar más/.test(text))node.dataset.variant='more';
+  }
   node.onclick=()=>attempt(fn);
   return node;
 }
@@ -288,9 +294,10 @@ function editor({post,debate=false,shared=false,comment,replyTo}={}){
   const body=input(f,'Contenido','body',{max:isComment?2000:5000,multiline:true,required:false,value:post?.body||comment?.body});
   el('small','Formato básico con **negrita**, código y enlaces Markdown HTTPS.',f);
   const attachments=photoEditor(f,comment||post,isComment?'comment':'post');
-  const preview=el('div',undefined,f);
-  button(f,'Vista previa',()=>{preview.replaceChildren();renderText(preview,body.value);});
-  const submit=el('button',post||comment?'Guardar':'Publicar',f);submit.className='primary';
+  const preview=el('div',undefined,f);preview.className='editor-preview';
+  const editorActions=el('div',undefined,f);editorActions.className='editor-actions';
+  button(editorActions,'Vista previa',()=>{preview.replaceChildren();renderText(preview,body.value);});
+  const submit=el('button',post||comment?'Guardar':'Publicar',editorActions);submit.className='primary';
   f.onsubmit=event=>{
     event.preventDefault();
     if(submit.disabled)return;
@@ -358,7 +365,7 @@ function votes(parent,item,kind){
   update();
 }
 function describe(parent,item){
-  const row=el('small',undefined,parent);
+  const row=el('small',undefined,parent);row.className='post-author';
   const fields=[
     item.pinned?'Fijada':null,
     item.categoryName,
@@ -384,7 +391,7 @@ function actions(parent,item,kind){
     const f=el('form',undefined,content);f.className='stack';
     select(f,'Motivo','reason',reasons.map(v=>[v,v]));
     input(f,'Detalles (opcional)','details',{max:1000,multiline:true});
-    el('button','Enviar denuncia',f);
+    el('button','Enviar denuncia',f).className='primary';
     f.onsubmit=event=>{
       event.preventDefault();
       void attempt(async()=>{await api('report',{kind,target:item.id,...Object.fromEntries(new FormData(f))});modal.close();status.textContent='Denuncia enviada.';});
@@ -462,7 +469,7 @@ function renderRecentComments(parent,post){
   }
 }
 function card(parent,item,detail=false){
-  const article=el('article',undefined,parent);article.className='card';
+  const article=el('article',undefined,parent);article.className='card'+(detail?' post-detail':' post-card');
   const info=el('div',undefined,article);
   describe(info,item);
   const heading=el(detail?'h1':'h2',undefined,info);
@@ -488,7 +495,11 @@ function card(parent,item,detail=false){
   const views=el('span','👁 '+visitLabel(item.views),metrics);views.className='post-view-count';
   views.title='Visitas únicas aproximadas; un perfil o navegador se cuenta una vez';
   votes(info,item,'post');
-  if(!detail)renderRecentComments(info,item);
+  if(!detail){
+    renderRecentComments(info,item);
+    const open=link(info,'Abrir publicación','/?post='+item.id);
+    open.className='ui-button open-post';open.setAttribute('aria-label','Abrir publicación: '+item.title);
+  }
   if(detail)actions(info,item,'post');
   return views;
 }
@@ -542,14 +553,16 @@ async function load(){
   const thread=$('#thread');
   thread.hidden=false;
   thread.replaceChildren();
-  link(thread,'Todas las publicaciones','/');
+  link(thread,'← Todas las publicaciones','/').className='ui-button quiet back-feed';
   const post=await api('posts/'+encodeURIComponent(postID));
   const counter=card(thread,post,true);
   if(post.status==='pending'){el('p','Pendiente de revisión por moderación.',thread);return;}
   void recordView(post.id,counter);
-  if(!post.closed)button(thread,'Comentar',()=>session(()=>editor({replyTo:{post:post.id}})));
-  else el('p','Debate cerrado.',thread);
-  const sort=select(thread,'Orden de comentarios','comment-sort',[['recent','Recientes'],['popular','Populares']]);
+  const threadTools=el('section',undefined,thread);threadTools.className='thread-tools';
+  el('h2','Comentarios',threadTools);
+  if(!post.closed)button(threadTools,'Comentar',()=>session(()=>editor({replyTo:{post:post.id}}))).className='primary';
+  else el('p','Debate cerrado.',threadTools);
+  const sort=select(threadTools,'Orden de comentarios','comment-sort',[['recent','Recientes'],['popular','Populares']]);
   const replies=el('div',undefined,thread);
   sort.onchange=()=>attempt(async()=>{replies.replaceChildren();await comments(replies,post.id,null,sort.value);});
   await comments(replies,post.id,null,sort.value);

@@ -21,7 +21,10 @@ async function attempt(fn){
   catch(error){status.textContent=error.message;}
 }
 function button(parent,label,fn){
-  const node=make(parent,'button',label);
+  const node=make(parent,'button',label);node.type='button';
+  if(/^(Eliminar|Bloquear)/.test(label))node.dataset.variant='danger';
+  else if(/^(Guardar|Crear categoría|Publicar)/.test(label))node.dataset.variant='action';
+  else if(/^(Ocultar|Cerrar denuncia)/.test(label))node.dataset.variant='quiet';
   node.onclick=()=>attempt(async()=>{
     node.disabled=true;
     try{await fn();}finally{node.disabled=false;}
