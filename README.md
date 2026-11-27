@@ -71,3 +71,6 @@ La migración 0008 crea admin_notifications. La tarea de moderación escribe inf
 
 ## Ally como participante virtual
 Migración 0009: perfil reservado Ally (miembro de servicio, no puede iniciar sesión), pausa y registro idempotente. La tarea horaria genera respuestas contextuales; la inserción controlada en ally_bot_replies respeta estado del hilo, moderación previa, solo lectura y cuotas de 8 respuestas cada 24h, 2 por hilo cada 24h y 1 por hilo cada hora. Stickers con lista cerrada y recurso local ally.webp.
+
+## Estado en línea
+Migración 0010: presencia voluntaria por perfil, consentimiento inicial explícito y revocable desde Mi perfil. Señal de 150 segundos, renovación aproximadamente cada minuto solo con la pestaña visible, consultas de hasta 80 nombres, sin publicar fechas ni historial. Ally IA no anuncia presencia humana. Las filas caducadas se purgan con las peticiones de presencia.

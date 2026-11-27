@@ -194,3 +194,14 @@
 .forum-page .sticker-picker>small{display:block;line-height:1.55}
 .forum-page .recent-comment-text .prose{font-size:inherit;color:inherit;line-height:inherit}
 @media(max-width:420px){.forum-page .sticker-options{grid-template-columns:repeat(3,minmax(0,1fr))}}
+
+/* Voluntary, short-lived forum presence. */
+.forum-page .presence-badge{display:inline-flex;align-items:center;gap:.32rem;vertical-align:middle;white-space:nowrap;margin-inline:.25rem .4rem;color:#c5f6a4;font-size:.7rem;line-height:1.4;font-weight:750}
+.forum-page .presence-badge::before{content:"";width:.47rem;height:.47rem;border-radius:50%;background:#a5ee78;box-shadow:0 0 6px #9bf06a66;flex:none}
+.forum-page .presence-badge[hidden],.forum-page .presence-choice[hidden]{display:none!important}
+.forum-page .presence-choice{display:flex;align-items:center;flex-wrap:wrap;gap:.75rem;justify-content:space-between;margin:0 0 .85rem;padding:.85rem 1rem;border:1px solid #688950;border-radius:.9rem;background:#222e25}
+.forum-page .presence-choice>div:first-child{flex:1 1 240px;min-width:0}
+.forum-page .presence-choice strong{color:#d8ffc0;font-size:.9rem}
+.forum-page .presence-choice p{margin:.25rem 0 0;color:#d4dfcb;font-size:.82rem}
+.forum-page .presence-choice-actions{display:flex;flex-wrap:wrap;gap:.5rem}
+.forum-page #profile .presence-badge{margin:0;font-size:.68rem}

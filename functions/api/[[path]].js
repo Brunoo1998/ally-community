@@ -112,6 +112,7 @@ async function route(request,env){
   const who=owner?await first('SELECT s.id,s.blocked_until,s.expires,p.username,p.created,p.role FROM sessions s LEFT JOIN profiles p ON p.owner=s.id WHERE s.id=? AND (?=1 OR (s.expires>? AND p.owner IS NULL))',owner,device?1:0,timestamp):null;
   const sessionCookie=key=>'__Host-ally_session='+key+'; Path=/; Max-Age=15552000; Secure; HttpOnly; SameSite=Lax';
   const publicProfile=who=>who?.username?{username:who.username,created:who.created,role:who.role}:null;
+  const presencePreference=async()=>who?.username?(await first('SELECT enabled FROM presence_preferences WHERE owner=?',owner))?.enabled??null:null;
   const throttle=async(key,max,window)=>{
     const expires=(Math.floor(timestamp/window)+1)*window;
     const row=await first('INSERT INTO rate VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET hits=hits+1 WHERE hits<? RETURNING hits',key+':'+expires,expires,max);
@@ -213,6 +214,26 @@ async function route(request,env){
     const current=await first('SELECT views FROM posts WHERE id=?',post);
     return json({views:current.views},200,headers);
   }
+  if(resource==='presence'&&method==='POST'){
+    const data=await body(request,12000);
+    if(id==='preference'&&!action){
+      if(!who?.username||who.username==='Ally')error('Accede a tu perfil.',401);
+      if(typeof data.enabled!=='boolean')error('Preferencia no válida.');
+      await db.batch([sql('INSERT INTO presence_preferences(owner,enabled) VALUES(?,?) ON CONFLICT(owner) DO UPDATE SET enabled=excluded.enabled',owner,+data.enabled),...(!data.enabled?[sql('DELETE FROM profile_presence WHERE owner=?',owner)]:[])]);
+      return json({enabled:data.enabled});
+    }
+    if(id)error('Ruta no encontrada.',404);
+    if(!Array.isArray(data.names)||data.names.length>80||data.names.some(n=>typeof n!=='string'||!/^[A-Za-z0-9_]{3,20}$/.test(n)))error('Consulta no válida.');
+    const names=[...new Set(data.names.map(n=>n.toLowerCase()))];
+    if(data.heartbeat===true&&who?.username&&who.username!=='Ally'&&who.blocked_until<=timestamp){
+      // A single short-lived row per consenting profile; no per-device history.
+      await run('INSERT INTO profile_presence(owner,expires) SELECT owner,? FROM presence_preferences WHERE owner=? AND enabled=1 ON CONFLICT(owner) DO UPDATE SET expires=excluded.expires WHERE profile_presence.expires<=?',timestamp+150,owner,timestamp+105);
+    }
+    if(data.heartbeat===true||Math.random()<.05)await run('DELETE FROM profile_presence WHERE rowid IN (SELECT rowid FROM profile_presence WHERE expires<=? LIMIT 100)',timestamp);
+    if(!names.length)return json({online:[]});
+    const rows=await all("SELECT pr.username FROM profiles pr JOIN presence_preferences pp ON pp.owner=pr.owner AND pp.enabled=1 JOIN profile_presence ps ON ps.owner=pr.owner JOIN sessions s ON s.id=pr.owner WHERE ps.expires>? AND s.blocked_until<=? AND pr.username<>'Ally' COLLATE NOCASE AND pr.username COLLATE NOCASE IN ("+names.map(()=>'?').join(',')+")",timestamp,timestamp,...names);
+    return json({online:rows.map(r=>r.username)});
+  }
   if(resource==='meta'&&method==='GET'){
     let headers={};
     if(who&&device&&device.expires<timestamp+12960000){
@@ -220,13 +241,13 @@ async function route(request,env){
       headers={'Set-Cookie':sessionCookie(cookie)};
     }
     return json({categories:await all('SELECT id,name FROM categories WHERE hidden=0 ORDER BY position,id'),
-      session:!!who,profile:publicProfile(who),siteKey:env.TURNSTILE_SITE_KEY||null,settings:await first('SELECT readonly,stop_posts,review FROM settings WHERE id=1')},200,headers);
+      session:!!who,profile:publicProfile(who),presenceSharing:await presencePreference(),siteKey:env.TURNSTILE_SITE_KEY||null,settings:await first('SELECT readonly,stop_posts,review FROM settings WHERE id=1')},200,headers);
   }
   if(resource==='profile'&&method==='GET'){
     if(!who?.username)error('Crea o recupera tu perfil.',401);
     const counts=await first("SELECT (SELECT count(*) FROM posts WHERE owner=? AND status IN ('public','pending')) AS posts,(SELECT count(*) FROM comments WHERE owner=? AND status IN ('public','pending')) AS comments,(SELECT count(*) FROM votes WHERE owner=?) AS votes",owner,owner,owner);
     const deviceKey=await first('SELECT device_key_hash IS NOT NULL AS enabled FROM profiles WHERE owner=?',owner);
-    return json({profile:publicProfile(who),counts,deviceKeyEnabled:!!deviceKey?.enabled});
+    return json({profile:publicProfile(who),counts,deviceKeyEnabled:!!deviceKey?.enabled,presenceSharing:await presencePreference()});
   }
   if(resource==='profile'&&method==='POST'){
     if(!who)error('Verifica tu sesión primero.',401);

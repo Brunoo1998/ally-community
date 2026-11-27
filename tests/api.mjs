@@ -17,6 +17,7 @@ db.exec(readFileSync(new URL('../migrations/0006_recent_comments_index.sql',impo
 db.exec(readFileSync(new URL('../migrations/0007_photos.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0008_admin_notifications.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0009_ally_bot.sql',import.meta.url),'utf8'));
+db.exec(readFileSync(new URL('../migrations/0010_presence.sql',import.meta.url),'utf8'));
 const env={
   TURNSTILE_SITE_KEY:'test-site-key',TURNSTILE_SECRET:'test-secret',
   RATE_SECRET:'r'.repeat(64),ADMIN_TOKEN:'a'.repeat(64),
@@ -278,6 +279,23 @@ try{
   const otherPost=(await req('posts',{cookie:b,data:{category:2,title:'Otro tema para Ally',body:'Texto de prueba'},status:201})).result.id;
   assert.throws(()=>addBot.run(otherPost,otherPost,'Respuesta no autorizada'),/ally_reply_not_allowed/);
   await req('admin/ally-bot',{key:env.ADMIN_TOKEN,data:{enabled:true}});
+  assert.equal((await req('meta',{cookie:a})).result.presenceSharing,null);
+  assert.deepEqual((await req('presence',{cookie:a,data:{names:['TestGamer'],heartbeat:true}})).result.online,[]);
+  await req('presence/preference',{data:{enabled:true},status:401});
+  await req('presence/preference',{cookie:a,data:{enabled:true}});
+  assert.equal((await req('meta',{cookie:a})).result.presenceSharing,1);
+  assert.deepEqual((await req('presence',{cookie:a,data:{names:['TestGamer'],heartbeat:true}})).result.online,['TestGamer']);
+  assert.deepEqual((await req('presence',{cookie:b,data:{names:['testgamer','OtherGamer','Ally']}})).result.online,['TestGamer']);
+  assert.deepEqual((await req('presence',{data:{names:['TestGamer']}})).result.online,['TestGamer']);
+  await req('presence',{data:{names:Array(81).fill('TestGamer')},status:400});
+  await req('presence',{data:{names:['x OR 1=1']},status:400});
+  await req('presence',{cookie:a,origin:'https://third-party.test',data:{names:[],heartbeat:true},status:403});
+  db.prepare('UPDATE profile_presence SET expires=unixepoch()-1').run();
+  assert.deepEqual((await req('presence',{cookie:b,data:{names:['TestGamer']}})).result.online,[]);
+  await req('presence',{cookie:a,data:{names:[],heartbeat:true}});
+  await req('presence/preference',{cookie:a,data:{enabled:false}});
+  assert.equal(db.prepare('SELECT count(*) AS n FROM profile_presence').get().n,0);
+  assert.deepEqual((await req('presence',{cookie:a,data:{names:['TestGamer'],heartbeat:true}})).result.online,[]);
   await req('posts',{overrides:{DB:null},status:503});
   console.log('SQLite persistente, dos sesiones, debate, configuración, comentarios, votos, denuncias, moderación y fallos: OK');
 }finally{

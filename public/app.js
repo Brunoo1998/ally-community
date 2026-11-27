@@ -130,6 +130,57 @@ async function verifySession(resume){
   })});
   modal.addEventListener('close',()=>window.turnstile.remove(widget),{once:true});
 }
+let presenceTimer=0,presenceBusy=false,presenceQueued=false,presenceEpoch=0;
+let onlineNames=new Set();
+function presenceBadge(parent,username){
+  if(!username||username.toLowerCase()==='ally')return;
+  const badge=el('span','En línea',parent);badge.className='presence-badge';badge.dataset.presenceUser=username.toLowerCase();
+  badge.hidden=!onlineNames.has(badge.dataset.presenceUser);
+}
+function paintPresence(){
+  for(const badge of document.querySelectorAll('[data-presence-user]'))badge.hidden=!onlineNames.has(badge.dataset.presenceUser);
+}
+function schedulePresence(delay=250){
+  clearTimeout(presenceTimer);presenceTimer=setTimeout(()=>void refreshPresence(),delay);
+}
+async function refreshPresence(){
+  if(document.hidden)return;
+  if(presenceBusy){presenceQueued=true;return;}
+  presenceBusy=true;
+  const epoch=presenceEpoch;
+  try{
+    const names=[...new Set([...document.querySelectorAll('[data-presence-user]')].map(n=>n.dataset.presenceUser))];
+    const heartbeat=meta?.presenceSharing===1;
+    const online=new Set();
+    if(names.length||heartbeat){
+      for(let offset=0;offset<Math.max(1,names.length);offset+=80){
+        const result=await api('presence',{names:names.slice(offset,offset+80),heartbeat:heartbeat&&offset===0});
+        for(const name of result.online||[])online.add(name.toLowerCase());
+      }
+    }
+    if(epoch===presenceEpoch){onlineNames=online;paintPresence();}
+  }catch{if(epoch===presenceEpoch){onlineNames.clear();paintPresence();}}
+  finally{presenceBusy=false;if(presenceQueued){presenceQueued=false;schedulePresence();}}
+}
+async function changePresence(enabled){
+  await api('presence/preference',{enabled});
+  meta.presenceSharing=enabled?1:0;presenceEpoch++;
+  if(!enabled&&meta.profile)onlineNames.delete(meta.profile.username.toLowerCase());
+  paintPresence();showPresenceChoice();schedulePresence(0);
+}
+function showPresenceChoice(){
+  const choice=$('#presence-choice');
+  if(!choice)return;
+  choice.hidden=!meta?.profile||meta.presenceSharing!==null;
+  if(choice.hidden)return;
+  choice.replaceChildren();
+  const copy=el('div',undefined,choice);
+  el('strong','¿Mostrar que estás en línea?',copy);
+  el('p','Otros miembros podrán ver un punto verde junto a tu nombre mientras estés en el foro. Puedes cambiarlo en Mi perfil.',copy);
+  const controls=el('div',undefined,choice);controls.className='presence-choice-actions';
+  button(controls,'Mostrar mi estado',()=>changePresence(true)).className='primary';
+  button(controls,'Prefiero ocultarlo',()=>changePresence(false));
+}
 function updateProfile(){
   const p=meta.profile, node=$('#profile');
   node.textContent=p?'@'+p.username:'Elegir nombre';
@@ -138,6 +189,8 @@ function updateProfile(){
   node.setAttribute('aria-label',p?'Mi perfil: '+p.username:'Elegir nombre de usuario');
   $('#moderation').hidden=p?.role!=='admin';
   if(p?.role==='admin')void refreshAdminNoticeCount();else setAdminNoticeCount(0);
+  if(p)presenceBadge(node,p.username);
+  presenceEpoch++;showPresenceChoice();schedulePresence();
 }
 async function refreshProfile(){meta=await api('meta');updateProfile();}
 function recoveryView(code,resume){
@@ -215,6 +268,10 @@ async function showProfile(){
   el('h3','@'+data.profile.username+(data.profile.role==='admin'?' · Administrador':''),content);
   el('p','Miembro desde '+new Date(data.profile.created*1000).toLocaleDateString('es-ES'),content);
   el('p',data.counts.posts+' publicaciones · '+data.counts.comments+' comentarios · '+data.counts.votes+' votos',content);
+  el('h3','Privacidad de mi estado',content);
+  const presence=el('p',data.presenceSharing===1?'Tu estado en línea está visible.':'Tu estado en línea está oculto.',content);
+  button(content,data.presenceSharing===1?'Ocultar mi estado':'Mostrar mi estado en línea',async()=>{await changePresence(data.presenceSharing!==1);await showProfile();});
+  el('small','Solo se muestra un indicador temporal; no se publica la hora de tu última conexión.',content);
   el('h3','Acceso desde otros dispositivos',content);
   el('p',data.deviceKeyEnabled?'Ya tienes una clave de acceso configurada. Si no la conservas, puedes generar otra.':'Genera una clave privada para entrar con tu mismo nombre desde el móvil, PC u otro navegador.',content);
   button(content,data.deviceKeyEnabled?'Renovar clave para otros dispositivos':'Generar clave para otros dispositivos',async()=>{
@@ -411,6 +468,7 @@ function describe(parent,item){
   ].filter(Boolean);
   if(item.username==='Ally'&&item.role==='member'){const avatar=el('img',undefined,row);avatar.className='ally-bot-avatar';avatar.src='/ally.webp';avatar.alt='';}
   if(fields.length)row.append(document.createTextNode(fields.join(' · ')+' · '));
+  presenceBadge(row,item.username);
   botIdentity(row,item);
   const created=new Date(item.created*1000);
   const date=created.toLocaleDateString('es-ES');
@@ -476,6 +534,7 @@ function renderRecentComments(parent,post){
     const meta=el('div',undefined,block);meta.className='recent-comment-meta';
     if(comment.username==='Ally'&&comment.role==='member'){const avatar=el('img',undefined,meta);avatar.className='ally-bot-avatar';avatar.src='/ally.webp';avatar.alt='';}
     const author=el('strong',comment.username?'@'+comment.username:'Usuario anónimo',meta);
+    presenceBadge(meta,comment.username);
     botIdentity(meta,comment);
     if(comment.role==='admin'){
       const badge=el('span','ADMIN',meta);badge.className='admin-badge';
@@ -705,6 +764,12 @@ async function init(){
     if(params.get('share')==='1')button(box,'Abrir borrador de configuración',()=>session(()=>editor({shared:true})));
   }
   await load();
+  schedulePresence(0);
+  const presenceObserver=new MutationObserver(records=>{if(records.some(r=>[...r.addedNodes].some(n=>n.nodeType===1&&(n.matches('[data-presence-user]')||n.querySelector('[data-presence-user]')))))schedulePresence();});
+  presenceObserver.observe($('#main'),{childList:true,subtree:true});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)schedulePresence(0);});
+  window.addEventListener('focus',()=>schedulePresence());
+  setInterval(()=>{if(!document.hidden)void refreshPresence();},60000);
   let prompted=false;try{prompted=sessionStorage.getItem('ally-profile-prompted')==='1';}catch{}
   if(!meta.profile&&!prompted){try{sessionStorage.setItem('ally-profile-prompted','1');}catch{}chooseProfile();}
 }
