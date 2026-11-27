@@ -220,3 +220,50 @@ body:has(dialog[open]) .ally-pet{display:none}
 
 /* Fotos de publicaciones y comentarios */
 .photo-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr));gap:10px;margin:12px 0;max-width:760px}.photo-gallery a,.photo-gallery>div{display:block;min-width:0;overflow:hidden;border-radius:12px}.photo-gallery img{display:block;width:100%;max-height:420px;object-fit:contain;background:#151221;border:1px solid #403455;border-radius:12px}.photo-gallery.compact{grid-template-columns:repeat(auto-fit,minmax(min(100px,100%),1fr));max-width:500px;gap:6px}.photo-gallery.compact img{max-height:140px;object-fit:cover}.photo-editor{display:grid;gap:8px;padding:12px;border:1px dashed #665487;border-radius:12px}.photo-editor input{max-width:100%}.photo-editor .photo-gallery{margin:0}.photo-editor button{width:100%;margin-top:4px}.photo-editor small{display:block;overflow-wrap:anywhere}@media(max-width:480px){.photo-gallery{grid-template-columns:repeat(2,minmax(0,1fr))}.photo-gallery img{max-height:260px}.photo-gallery.compact img{max-height:100px}}
+
+/* Ally: directional transport, hover thrusters and contextual landings. */
+.ally-pet[data-dragging] .ally-pet-button{touch-action:none}
+.ally-pet[data-dragging] .ally-pet-speech{border-color:#a6d77d;box-shadow:0 4px 14px #0008}
+.ally-pet[data-dragging] .ally-pet-button::after{content:"";position:absolute;left:20%;right:20%;bottom:4px;height:7px;border-radius:50%;background:#0007;filter:blur(3px);pointer-events:none}
+@media(prefers-reduced-motion:no-preference){
+ .ally-pet[data-dragging] .ally-pet-button>img{animation:ally-drag-cruise .62s ease-in-out infinite alternate;transform:none;filter:drop-shadow(0 6px 6px #0009)}
+ .ally-pet[data-drag-mode="left"] .ally-pet-button>img{animation:ally-drag-left .46s ease-in-out infinite alternate}
+ .ally-pet[data-drag-mode="right"] .ally-pet-button>img{animation:ally-drag-right .46s ease-in-out infinite alternate}
+ .ally-pet[data-drag-mode="up"] .ally-pet-button>img{animation:ally-drag-up .42s ease-in-out infinite alternate}
+ .ally-pet[data-drag-mode="down"] .ally-pet-button>img{animation:ally-drag-down .42s ease-in-out infinite alternate}
+ .ally-pet[data-drag-mode="fast"] .ally-pet-button>img{animation:ally-drag-turbo-right .26s ease-in-out infinite alternate;filter:drop-shadow(-8px 4px 8px #b1f8748a)}
+ .ally-pet[data-drag-mode="fast"][data-drag-side="left"] .ally-pet-button>img{animation:ally-drag-turbo-left .26s ease-in-out infinite alternate;filter:drop-shadow(8px 4px 8px #b1f8748a)}
+ .ally-pet[data-drag-mode="fast"] .ally-pet-button::after{background:#b1f87495;animation:ally-thruster .22s ease-in-out infinite alternate;filter:blur(4px)}
+ @keyframes ally-drag-cruise{from{transform:translateY(-3px) rotate(-4deg)}to{transform:translateY(-8px) rotate(4deg) scale(1.04)}}
+ @keyframes ally-drag-left{from{transform:translateY(-3px) rotate(-10deg)}to{transform:translateY(-6px) rotate(-20deg) scale(1.04)}}
+ @keyframes ally-drag-right{from{transform:translateY(-3px) rotate(10deg)}to{transform:translateY(-6px) rotate(20deg) scale(1.04)}}
+ @keyframes ally-drag-up{from{transform:translateY(-5px) scale(.94,1.08)}to{transform:translateY(-11px) scale(.90,1.13)}}
+ @keyframes ally-drag-down{from{transform:translateY(-2px) scale(1.07,.95)}to{transform:translateY(3px) scale(1.12,.87)}}
+ @keyframes ally-drag-turbo-left{from{transform:rotate(-18deg) scale(1.08,.96)}to{transform:translateY(-4px) rotate(-30deg) scale(1.15,.91)}}
+ @keyframes ally-drag-turbo-right{from{transform:rotate(18deg) scale(1.08,.96)}to{transform:translateY(-4px) rotate(30deg) scale(1.15,.91)}}
+ @keyframes ally-thruster{from{opacity:.45;transform:scaleX(.65)}to{opacity:.9;transform:scaleX(1.15)}}
+ .ally-pet-button>img[data-reaction="soft-land"]{animation:ally-soft-land .65s ease both}
+ .ally-pet-button>img[data-reaction="stretch"]{animation:ally-stretch .95s ease both}
+ .ally-pet-button>img[data-reaction="salute-land"]{animation:ally-salute-land .95s ease both}
+ .ally-pet-button>img[data-reaction="happy-hop"]{animation:ally-happy-hop .9s ease both}
+ .ally-pet-button>img[data-reaction="gyro-land"]{animation:ally-gyro-land .95s ease both}
+ .ally-pet-button>img[data-reaction="brake-land"]{animation:ally-brake-land .85s ease both}
+ .ally-pet-button>img[data-reaction="spin-land"]{animation:ally-spin-land .85s ease both}
+ .ally-pet-button>img[data-reaction="rest-land"]{animation:ally-rest-land 1.4s ease both}
+ .ally-pet-button>img[data-reaction="peek-land"]{animation:ally-peek-land .95s ease both}
+ .ally-pet-button>img[data-reaction="magnet-land"]{animation:ally-magnet-land .8s ease both}
+ @keyframes ally-soft-land{0%{transform:translateY(-9px) scale(.93,1.06)}35%{transform:scale(1.16,.78)}64%{transform:translateY(-7px) scale(.96,1.07)}85%,100%{transform:none}}
+ @keyframes ally-stretch{0%,100%{transform:none}20%{transform:scale(.88,1.18)}45%{transform:scale(1.16,.89)}72%{transform:scale(.96,1.06)}}
+ @keyframes ally-salute-land{0%,100%{transform:none}20%{transform:translateY(-6px) rotate(-14deg)}42%{transform:rotate(13deg)}62%{transform:rotate(-10deg)}}
+ @keyframes ally-happy-hop{0%,100%{transform:none}15%,55%{transform:scale(1.12,.82)}32%{transform:translateY(-15px) rotate(-9deg)}72%{transform:translateY(-9px) rotate(8deg)}}
+ @keyframes ally-gyro-land{0%{transform:rotate(-28deg)}18%{transform:rotate(23deg)}35%{transform:rotate(-18deg)}53%{transform:rotate(10deg)}70%{transform:rotate(-5deg)}100%{transform:none}}
+ @keyframes ally-brake-land{0%{transform:scale(1.15,.87) rotate(24deg)}25%{transform:translateX(-5px) scale(1.18,.83) rotate(-13deg)}54%{transform:translateX(3px) scale(.96,1.06) rotate(8deg)}100%{transform:none}}
+ @keyframes ally-spin-land{0%{transform:rotate(0)}65%{transform:translateY(-8px) rotate(360deg) scale(.93)}100%{transform:rotate(360deg)}}
+ @keyframes ally-rest-land{0%,100%{transform:none}30%,65%{transform:translateY(4px) rotate(10deg) scale(1.04,.83);opacity:.8}85%{transform:scale(.97,1.05);opacity:1}}
+ @keyframes ally-peek-land{0%,100%{transform:none}25%,55%{transform:translateY(8px) scale(.82);opacity:.72}75%{transform:translateY(-5px) rotate(-8deg);opacity:1}}
+ @keyframes ally-magnet-land{0%{transform:translateY(-8px) scale(.92)}26%{transform:scale(1.15,.82);filter:drop-shadow(0 0 12px #b1f874)}50%{transform:scale(.96,1.05)}100%{transform:none}}
+}
+@media(prefers-reduced-motion:reduce){
+ .ally-pet[data-dragging] .ally-pet-button>img{animation:none!important;transform:none!important;filter:drop-shadow(0 3px 6px #0009)}
+ .ally-pet[data-dragging] .ally-pet-button::after{display:none}
+}
