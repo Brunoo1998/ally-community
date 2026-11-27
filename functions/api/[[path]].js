@@ -139,7 +139,7 @@ async function route(request,env){
     if(!post)error('Publicación no válida.');
     const exists=await first("SELECT p.views FROM posts p JOIN categories c ON c.id=p.category WHERE p.id=? AND p.status='public' AND c.hidden=0",post);
     if(!exists)error('Publicación no disponible.',404);
-    const visitorCookie=request.headers.get('Cookie')?.match(/(?:^|;\\s*)__Host-ally_visitor=([a-f0-9]{64})(?=;|$)/)?.[1];
+    const visitorCookie=request.headers.get('Cookie')?.match(/(?:^|;\s*)__Host-ally_visitor=([a-f0-9]{64})(?=;|$)/)?.[1];
     let newVisitor=null, headers={};
     let viewer;
     if(who?.username)viewer='profile:'+who.id;
