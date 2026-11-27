@@ -20,11 +20,22 @@ Requisitos para la prueba de integración local: Node.js 24. Ejecuta `node tests
 
 `integration/ally-lab.patch` se preparó sobre el commit `358c4418be1f6fc3b8f27cd72ed1311a082fd7a2`. Añade «Comunidad» al menú y enlaces por ID de juego desde las fichas. El borrador toma la resolución, calidad y opciones identificables del preajuste visible y permite editarlas. Las FPS observadas quedan para el usuario. Aplica con `git apply --check ruta/ally-lab.patch` y `git apply ruta/ally-lab.patch` después de verificar el dominio y las escrituras en producción. Comprueba que la ficha de ida y vuelta funciona en ambas superficies de Ally Lab.
 
+## Visitas únicas y ranking
+
+El contador se inicia al abrir una publicación completa (`/?post=ID`), no al mostrar tarjetas en el listado. La llamada POST a `/api/visits` requiere origen del propio sitio y valida que el post sea público. La tabla `post_views` identifica una sola visita por publicación y visitante; un disparador incrementa `posts.views` solo cuando se inserta una combinación nueva. Se aplica una cuota temporal por IP seudonimizada con `RATE_SECRET`, pero la IP no se guarda en `post_views`.
+
+- Perfil identificado: la deduplicación se basa en el identificador de perfil, incluso al recuperar el perfil desde otro dispositivo.
+- Visitante sin perfil: cookie de primera parte `__Host-ally_visitor`, aleatoria, `Secure`, `HttpOnly`, `SameSite=Lax`, duración máxima 365 días. Solo se almacena su hash en la tabla de visitas.
+- El contador es una **estimación de visitantes únicos reconocibles**, no una cifra infalible de personas: un navegador nuevo, las cookies borradas o el uso del foro antes de identificarse pueden contarse de nuevo. No se contabilizan visitas anteriores a la puesta en marcha.
+- El filtro «Más visitadas» ordena por `posts.views`, prescindiendo de la prioridad de publicaciones fijadas. «Estadísticas» muestra los cinco posts con más vistas; el resumen puede actualizarse hasta 60 segundos después.
+- La migración `0004_post_unique_views.sql` es aditiva y se aplicó a la D1 de producción por API. Antes de ejecutar migraciones manualmente en producción, comprueba los objetos existentes para no repetir el `ALTER TABLE`.
+- El uso de un identificador de visitante y su conservación requieren revisión legal. La política de privacidad publicada lo documenta provisionalmente; el responsable debe fijar plazo de supresión y la base jurídica o consentimiento exigible antes de considerarla definitiva.
+
 ## Moderación y mantenimiento
 
 Abre `/admin.html` y usa la clave privada. Cada ruta administrativa comprueba la clave en el servidor. La interfaz la mantiene en memoria hasta cerrar o recargar la página. Para una segunda capa, configura Cloudflare Access en un dominio compatible y cubre tanto la página como `/api/admin*`, incluidos accesos alternativos. La autenticación por clave sigue protegiendo los endpoints si se accede por otro dominio.
 
-Los controles permiten gestionar categorías y denuncias, ocultar, eliminar, aprobar, fijar, cerrar, restringir sesiones, pausar publicaciones y activar solo lectura. La cola y el historial del panel muestran los 50 registros más recientes por tabla. Los votos se aplican con clave única y disparadores. El borrado vacía el texto y las ramas de comentarios conservan un marcador. Los contadores públicos no representan usuarios únicos. Las tendencias ordenan por votos y comentarios sobre los últimos siete días. Las estadísticas se calculan bajo demanda y se cachean hasta cinco minutos.
+Los controles permiten gestionar categorías y denuncias, ocultar, eliminar, aprobar, fijar, cerrar, restringir sesiones, pausar publicaciones y activar solo lectura. La cola y el historial del panel muestran los 50 registros más recientes por tabla. Los votos se aplican con clave única y disparadores. El borrado vacía el texto y las ramas de comentarios conservan un marcador. Los contadores de publicaciones, comentarios y votos no representan usuarios únicos; el contador de visitas intenta deduplicar por perfil o navegador. Las tendencias ordenan por votos y comentarios sobre los últimos siete días. Las estadísticas se calculan bajo demanda y se cachean hasta cinco minutos.
 
 ### Copias de seguridad y restauración
 
