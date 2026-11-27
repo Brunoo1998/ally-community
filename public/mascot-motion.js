@@ -80,3 +80,25 @@ export function createPhrasePicker(random=Math.random){
     const selected=bag.pop();previous=label(selected);return selected;
   };
 }
+
+export const gamingLines={
+ intro:['¡Hora de jugar! ¡Mi ROG Ally X está lista!','¡Vamos, colega! ¡Arrancando la partida!','¡Modo gamer activado!','¡Una partidita y seguimos!'],
+ playing:['¡Uy, esa curva!','¡Vamos, que lo tengo!','¡Mis circuitos están concentradísimos!','¡No me distraigas, colega!'],
+ win:['¡Victoria! ¡Eso sí que ha sido una partida!','¡Logro desbloqueado, colega!','¡Qué buena jugada!','¡Partida ganada! ¡Bip, bip!']
+};
+// All timers belong to a single sequence: drag, hide and dialog cancel every phase.
+export function createGamingSequence({stage,finish,line,setTimer=setTimeout,clearTimer=clearTimeout}){
+ let timers=[],run=0;
+ function cancel(){run++;for(const timer of timers)clearTimer(timer);timers=[];}
+ function start(){
+  cancel();const active=run;
+  const later=(ms,fn)=>timers.push(setTimer(()=>{if(active===run)fn();},ms));
+  stage('intro');line('intro');
+  later(550,()=>stage('playing'));
+  later(3450,()=>line('playing'));
+  later(6550,()=>{stage('win');line('win');});
+  later(8100,()=>stage('put-away'));
+  later(8600,()=>{cancel();finish();});
+ }
+ return {start,cancel};
+}

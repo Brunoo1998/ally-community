@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42">
+<defs><linearGradient id="armor" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#9568b5"/><stop offset=".5" stop-color="#53366b"/><stop offset="1" stop-color="#20192c"/></linearGradient><linearGradient id="finger" x1="0" y1="0" x2=".7" y2="1"><stop stop-color="#c1a0d4"/><stop offset=".5" stop-color="#77568f"/><stop offset="1" stop-color="#39284e"/></linearGradient></defs>
+<!-- Wrist enters from the torso side; articulated fingers curl around the rear grip. -->
+<path d="M24 3L30 9 23 22 17 24 11 17Z" fill="url(#armor)" stroke="#24192f" stroke-width="1.6"/>
+<path d="M10 15Q17 12 23 18L25 29Q23 37 15 39L6 35Q2 30 3 23Q4 18 10 15Z" fill="url(#armor)" stroke="#24192f" stroke-width="1.5"/>
+<path d="M8 16Q12 14 17 17L21 23Q20 27 16 25L10 21Z" fill="url(#finger)" stroke="#3b2850" stroke-width="1"/>
+<path d="M5 23Q9 21 15 24L19 28Q18 32 14 31L7 28Z" fill="url(#finger)" stroke="#3b2850" stroke-width="1"/>
+<path d="M5 30Q9 28 14 31L17 34Q16 38 12 37L7 35Z" fill="url(#finger)" stroke="#3b2850" stroke-width="1"/>
+<path d="M21 7l4 4-5 7" fill="none" stroke="#92cd70" stroke-width="1.5" stroke-linecap="round"/>
+<circle cx="21" cy="21" r="2" fill="#252536" stroke="#91be77" stroke-width=".7"/>
+</svg>

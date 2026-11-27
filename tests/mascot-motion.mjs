@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {dragLines,landLines,dragMode,landingMood,createPhrasePicker} from '../public/mascot-motion.js';
+import {dragLines,landLines,dragMode,landingMood,createPhrasePicker,gamingLines,createGamingSequence} from '../public/mascot-motion.js';
 const d={started:0,lastTime:900,speed:.2,distance:100};
 assert.equal(landingMood(d,1000,{x:.5,y:.5}),'gentle');
 assert.equal(landingMood({...d,speed:2},1000,{x:.5,y:.5}),'fast');
@@ -22,3 +22,15 @@ for(const [key,choices] of Object.entries(landLines)){
 assert.equal(Object.values(dragLines).flat().length,15);
 assert.equal(Object.values(landLines).flat().length,19);
 console.log('Ally: dirección, velocidad, tipo de aterrizaje y rotación de frases correctos.');
+
+let scheduled=[],events=[];
+const sequence=createGamingSequence({stage:s=>events.push('stage:'+s),line:s=>events.push('line:'+s),finish:()=>events.push('finish'),setTimer:(fn,ms)=>{const entry={fn,ms,cancelled:false};scheduled.push(entry);return entry;},clearTimer:t=>{t.cancelled=true;}});
+sequence.start();
+assert.deepEqual(events,['stage:intro','line:intro']);
+for(const timer of scheduled.slice().sort((a,b)=>a.ms-b.ms))if(!timer.cancelled)timer.fn();
+assert.deepEqual(events,['stage:intro','line:intro','stage:playing','line:playing','stage:win','line:win','stage:put-away','finish']);
+events=[];scheduled=[];sequence.start();const stale=scheduled.slice();sequence.cancel();for(const timer of stale)timer.fn();
+assert.deepEqual(events,['stage:intro','line:intro']);
+assert.ok(stale.every(t=>t.cancelled));
+assert.equal(Object.values(gamingLines).flat().length,12);
+console.log('Ally: secuencia de partida y cancelación de temporizadores correctas.');

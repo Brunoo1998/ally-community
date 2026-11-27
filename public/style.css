@@ -267,3 +267,41 @@ body:has(dialog[open]) .ally-pet{display:none}
  .ally-pet[data-dragging] .ally-pet-button>img{animation:none!important;transform:none!important;filter:drop-shadow(0 3px 6px #0009)}
  .ally-pet[data-dragging] .ally-pet-button::after{display:none}
 }
+
+/* Gaming v2: the screen faces Ally; back shell, shoulders and hands form one prop. */
+.ally-pet-console{top:39px;width:70px;aspect-ratio:160/76;transform:translateX(-50%);transform-origin:50% 30%;isolation:isolate;filter:drop-shadow(0 3px 3px #000b)}
+.ally-pet-console .ally-console-back{position:absolute;inset:0;z-index:2;width:100%;height:100%;object-fit:contain}
+.ally-pet-console .ally-play-arm{position:absolute;top:-3px;width:16px;height:20px;z-index:1;border:1px solid #342444;border-radius:8px;background:linear-gradient(140deg,#8c68ad,#4b345f 54%,#282030);box-shadow:inset 0 1px 2px #c7a6df55}
+.ally-play-arm.left{left:6px;transform:rotate(36deg);transform-origin:90% 10%}
+.ally-play-arm.right{right:6px;transform:rotate(-36deg);transform-origin:10% 10%}
+.ally-pet-console .ally-play-hand{position:absolute;top:3px;z-index:3;width:17px;height:23px;object-fit:contain;filter:drop-shadow(0 1px 1px #0008)}
+.ally-play-hand.left{left:-1px;transform-origin:75% 15%}
+.ally-play-hand.right{right:-1px;transform:scaleX(-1);transform-origin:25% 15%}
+.ally-pet[data-gaming] .ally-pet-button>img{transform:translateY(-4px) scale(.98);filter:drop-shadow(0 3px 5px #0009) drop-shadow(0 3px 3px #aaf16d33)}
+.ally-pet[data-gaming="intro"] .ally-pet-console,.ally-pet[data-gaming="playing"] .ally-pet-console,.ally-pet[data-gaming="win"] .ally-pet-console,.ally-pet[data-gaming="put-away"] .ally-pet-console{display:block}
+@media(prefers-reduced-motion:no-preference){
+ .ally-pet[data-gaming="intro"] .ally-pet-console{animation:ally-game-lift .55s cubic-bezier(.2,.8,.25,1) both}
+ .ally-pet[data-gaming="playing"] .ally-pet-console{animation:ally-game-steer 2.4s ease-in-out infinite}
+ .ally-pet[data-gaming="win"] .ally-pet-console{animation:ally-game-cheer 1.15s ease both}
+ .ally-pet[data-gaming="put-away"] .ally-pet-console{animation:ally-game-stow .5s ease both}
+ .ally-pet[data-gaming="intro"] .ally-pet-button>img{animation:ally-game-focus .55s ease both}
+ .ally-pet[data-gaming="playing"] .ally-pet-button>img,.ally-pet[data-gaming="playing"][data-speaking] .ally-pet-button>img:not([data-reaction]){animation:ally-game-body 2.4s ease-in-out infinite}
+ .ally-pet[data-gaming="win"] .ally-pet-button>img,.ally-pet[data-gaming="win"][data-speaking] .ally-pet-button>img:not([data-reaction]){animation:ally-game-body-win 1.15s ease both}
+ .ally-pet[data-gaming="put-away"] .ally-pet-button>img{animation:ally-game-unfocus .5s ease both}
+ .ally-pet[data-gaming="playing"] .ally-play-hand.left{animation:ally-game-left-input .72s ease-in-out infinite}
+ .ally-pet[data-gaming="playing"] .ally-play-hand.right{animation:ally-game-right-input .47s ease-in-out infinite}
+ @keyframes ally-game-lift{0%{opacity:0;transform:translate(-50%,17px) scale(.72) rotate(-8deg)}35%{opacity:1}100%{opacity:1;transform:translate(-50%,0) scale(1)}}
+ @keyframes ally-game-steer{0%,100%{transform:translate(-50%,0) rotate(0)}22%{transform:translate(-50%,-1px) rotate(-5deg) rotateY(-7deg)}48%{transform:translate(-50%,1px) rotate(2deg)}72%{transform:translate(-50%,-2px) rotate(5deg) rotateY(7deg)}}
+ @keyframes ally-game-cheer{0%,100%{transform:translate(-50%,0)}32%{transform:translate(-50%,-7px) rotate(-5deg)}65%{transform:translate(-50%,-3px) rotate(4deg)}}
+ @keyframes ally-game-stow{0%{opacity:1;transform:translate(-50%,0)}100%{opacity:0;transform:translate(-50%,17px) scale(.72)}}
+ @keyframes ally-game-focus{from{transform:none}to{transform:translateY(-4px) scale(.98)}}
+ @keyframes ally-game-body{0%,100%{transform:translateY(-4px) scale(.98)}22%{transform:translateY(-4px) rotate(-3deg) scale(.98)}48%{transform:translateY(-3px) scale(.97)}72%{transform:translateY(-5px) rotate(3deg) scale(.98)}}
+ @keyframes ally-game-body-win{0%,100%{transform:translateY(-4px) scale(.98)}32%{transform:translateY(-10px) rotate(-3deg) scale(1.02)}65%{transform:translateY(-6px) rotate(3deg) scale(1.01)}}
+ @keyframes ally-game-unfocus{from{transform:translateY(-4px) scale(.98)}to{transform:none}}
+ @keyframes ally-game-left-input{0%,100%{transform:rotate(0)}25%{transform:translateY(-1.5px) rotate(-8deg)}55%{transform:translateY(.5px) rotate(3deg)}}
+ @keyframes ally-game-right-input{0%,100%{transform:scaleX(-1) rotate(0)}35%{transform:scaleX(-1) translateY(-1.5px) rotate(-7deg)}65%{transform:scaleX(-1) rotate(3deg)}}
+}
+@media(prefers-reduced-motion:reduce){
+ .ally-pet[data-gaming] .ally-pet-console,.ally-pet[data-gaming] .ally-pet-button>img,.ally-pet[data-gaming] .ally-play-hand{animation:none!important}
+ .ally-pet[data-gaming="put-away"] .ally-pet-console{visibility:hidden}
+}

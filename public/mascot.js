@@ -1,4 +1,4 @@
-import {dragLines,landLines,landingMood,dragMode,createPhrasePicker} from './mascot-motion.js?v=1';
+import {dragLines,landLines,landingMood,dragMode,createPhrasePicker,gamingLines,createGamingSequence} from './mascot-motion.js?v=2';
 // Ally Community's independent, local-only interactive mascot.
 const root=document.createElement('aside');
 root.className='ally-pet';
@@ -14,12 +14,12 @@ consoleProp.className='ally-pet-console';
 consoleProp.setAttribute('aria-hidden','true');
 const consoleArt=document.createElement('img');
 consoleArt.src='/ally-handheld.svg';consoleArt.alt='';consoleArt.draggable=false;
-const gameScreen=document.createElement('span');
-gameScreen.className='ally-pet-game-screen';
-const track=document.createElement('span');track.className='ally-pet-game-track';
-const racer=document.createElement('span');racer.className='ally-pet-game-racer';
-const opponent=document.createElement('span');opponent.className='ally-pet-game-opponent';
-gameScreen.append(track,opponent,racer);consoleProp.append(consoleArt,gameScreen);pet.append(consoleProp);
+const leftArm=document.createElement('span');leftArm.className='ally-play-arm left';
+const rightArm=document.createElement('span');rightArm.className='ally-play-arm right';
+const leftHand=document.createElement('img');leftHand.className='ally-play-hand left';leftHand.src='/ally-hand-grip.svg';leftHand.alt='';leftHand.draggable=false;
+const rightHand=document.createElement('img');rightHand.className='ally-play-hand right';rightHand.src='/ally-hand-grip.svg';rightHand.alt='';rightHand.draggable=false;
+consoleArt.className='ally-console-back';consoleArt.src='/ally-handheld.svg?v=rear-2';
+consoleProp.append(leftArm,rightArm,consoleArt,leftHand,rightHand);pet.append(consoleProp);
 const hide=document.createElement('button');
 hide.type='button';hide.className='ally-pet-hide';hide.textContent='×';hide.setAttribute('aria-label','Minimizar mascota');
 const restore=document.createElement('button');
@@ -135,26 +135,32 @@ function randomReaction(){
 }
 function clearEffect(){clearTimeout(effectTimer);effect.classList.remove('visible');effect.textContent='';}
 function showEffect(symbol){clearEffect();if(!symbol||reduced.matches)return;effect.textContent=symbol;void effect.offsetWidth;effect.classList.add('visible');effectTimer=setTimeout(clearEffect,1150);}
-let gamingTimer=0;
+const gamingSequence=createGamingSequence({
+  stage(stage){root.setAttribute('data-gaming',stage);},
+  finish(){
+    root.removeAttribute('data-gaming');
+    if(!muted&&!document.hidden&&!document.querySelector('dialog[open]')){
+      animate('victory');showEffect('★');activity();
+    }
+  },
+  line(stage){
+    if(muted||document.hidden||document.querySelector('dialog[open]'))return;
+    if(stage==='playing'&&activeUtterance)return;
+    const message=pickMotion('gaming-'+stage,gamingLines[stage]);
+    say(message,stage!=='win'||!activeUtterance);
+    if(stage==='win')showEffect('★');
+  }
+});
 function endGaming(){
-  clearTimeout(gamingTimer);gamingTimer=0;
+  gamingSequence.cancel();
   root.removeAttribute('data-gaming');
 }
 function startGaming(){
   endGaming();stopVoice();clearEffect();clearSpeech();
   img.removeAttribute('data-reaction');
   void consoleProp.offsetWidth;
-  root.setAttribute('data-gaming','');
   activity();
-  say('¡Hora de jugar! ¡Mi Xbox ROG Ally X está lista!');
-  gamingTimer=setTimeout(()=>{
-    endGaming();
-    if(!muted&&!document.hidden&&!document.querySelector('dialog[open]')){
-      animate('victory');showEffect('★');
-      say('¡Partida ganada, colega!',false);
-      activity();
-    }
-  },6200);
+  gamingSequence.start();
 }
 function reaction(name,message,symbol){endGaming();animate(name,message);showEffect(symbol);}
 const pickMotion=createPhrasePicker();
