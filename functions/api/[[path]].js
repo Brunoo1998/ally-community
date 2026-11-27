@@ -269,7 +269,7 @@ async function route(request,env){
     const category=positive(query.get('category')), game=gameId(query.get('game'));
     const orders={recent:'p.id',popular:'p.score',comments:'p.replies',trend:'(p.score+2*p.replies)',views:'p.views'};
     const sort=query.get('sort')||'recent', order=Object.hasOwn(orders,sort)?orders[sort]:orders.recent;
-    const pinRank=sort==='views'?'0':'p.pinned';
+    const pinRank=sort==='views'?'CAST(0 AS INTEGER)':'p.pinned';
     const conditions=["p.status='public'","c.hidden=0"], values=[who?.id??null,who?.id??null];
     if(search?.length){conditions.push('p.id IN (SELECT rowid FROM post_search WHERE post_search MATCH ? LIMIT 200)');values.push(search.map(v=>'"'+v+'"*').join(' AND '));}
     if(category){conditions.push('p.category=?');values.push(category);}
