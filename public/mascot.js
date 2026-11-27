@@ -45,7 +45,7 @@ function speak(message){
   const voice=spanishVoice();
   if(!voice)return; // Never fall back to an unrelated language.
   const u=new SpeechSynthesisUtterance(message);
-  u.voice=voice;u.lang=voice.lang;u.pitch=1.38;u.rate=1.07;u.volume=.65;
+  u.voice=voice;u.lang=voice.lang;u.pitch=1.12;u.rate=1.07;u.volume=.65;
   activeUtterance=u;
   u.onstart=()=>{if(activeUtterance===u){root.setAttribute('data-speaking','');clearTimeout(speechTimer);}};
   const done=()=>{if(activeUtterance!==u)return;clearTimeout(voiceTimer);activeUtterance=null;root.removeAttribute('data-speaking');clearTimeout(speechTimer);speechTimer=setTimeout(clearSpeech,650);};
