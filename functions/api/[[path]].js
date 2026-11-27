@@ -178,12 +178,43 @@ async function route(request,env){
   if(resource==='profile'&&method==='GET'){
     if(!who?.username)error('Crea o recupera tu perfil.',401);
     const counts=await first("SELECT (SELECT count(*) FROM posts WHERE owner=? AND status IN ('public','pending')) AS posts,(SELECT count(*) FROM comments WHERE owner=? AND status IN ('public','pending')) AS comments,(SELECT count(*) FROM votes WHERE owner=?) AS votes",owner,owner,owner);
-    return json({profile:publicProfile(who),counts});
+    const deviceKey=await first('SELECT device_key_hash IS NOT NULL AS enabled FROM profiles WHERE owner=?',owner);
+    return json({profile:publicProfile(who),counts,deviceKeyEnabled:!!deviceKey?.enabled});
   }
   if(resource==='profile'&&method==='POST'){
     if(!who)error('Verifica tu sesión primero.',401);
     if(who.blocked_until>timestamp)error('Esta sesión está restringida.',403);
     const data=await body(request);
+    if(id==='device-key'){
+      if(!who.username)error('Crea o recupera tu perfil primero.',401);
+      await throttle('device-key:'+owner,3,3600);
+      // Solo se muestra una vez. SHA-256 es adecuado para una clave aleatoria de 256 bits.
+      const key=token();
+      await run('UPDATE profiles SET device_key_hash=? WHERE owner=?',await digest(key),owner);
+      return json({key});
+    }
+    if(id==='device-login'){
+      if(who.username)error('Cierra tu perfil antes de acceder con otra cuenta.',409);
+      const username=field(data.username,20,3);
+      const accessKey=field(data.key,64,64).toLowerCase();
+      if(!/^[a-zA-Z0-9_]{3,20}$/.test(username)||!/^[a-f0-9]{64}$/.test(accessKey))
+        error('Usuario o clave de acceso incorrectos.',401);
+      const ip=request.headers.get('CF-Connecting-IP');
+      if(!ip||!env.RATE_SECRET||env.RATE_SECRET.length<32)error('El acceso no está disponible temporalmente.',503);
+      const encoder=new TextEncoder();
+      const signer=await crypto.subtle.importKey('raw',encoder.encode(env.RATE_SECRET),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+      const hour=Math.floor(timestamp/3600);
+      const fingerprint=async suffix=>Array.from(new Uint8Array(await crypto.subtle.sign('HMAC',signer,encoder.encode('access:'+hour+':'+ip+':'+suffix))),v=>v.toString(16).padStart(2,'0')).join('');
+      // Límites por IP y por combinación IP/usuario: no se almacena la IP en claro.
+      await throttle('device-ip:'+await fingerprint('all'),40,3600);
+      await throttle('device-account:'+await fingerprint(username.toLowerCase()),10,3600);
+      const profile=await first('SELECT p.owner,s.blocked_until FROM profiles p JOIN sessions s ON s.id=p.owner WHERE p.username=? AND p.device_key_hash=?',username,await digest(accessKey));
+      if(!profile)error('Usuario o clave de acceso incorrectos.',401);
+      if(profile.blocked_until>timestamp)error('Este perfil tiene el acceso restringido.',403);
+      const key=token();
+      await run('INSERT INTO profile_devices(id,owner,expires) VALUES(?,?,?)',await digest(key),profile.owner,timestamp+15552000);
+      return json({ok:true},200,{'Set-Cookie':sessionCookie(key)});
+    }
     if(id==='recover'){
       if(who.username)error('Cierra tu perfil antes de recuperar otro.',409);
       await throttle('recover:'+owner,6,3600);
