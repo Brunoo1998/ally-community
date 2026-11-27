@@ -1,0 +1,278 @@
+const json=(data,status=200,headers={})=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...headers}});
+const error=(message,status=400)=>{throw Object.assign(new Error(message),{status});};
+const now=()=>Math.floor(Date.now()/1000);
+const token=()=>Array.from(crypto.getRandomValues(new Uint8Array(32)),v=>v.toString(16).padStart(2,'0')).join('');
+const digest=async value=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),v=>v.toString(16).padStart(2,'0')).join('');
+const positive=value=>Number.isSafeInteger(Number(value))&&Number(value)>0?Number(value):null;
+const gameId=value=>typeof value==='string'&&/^[a-z0-9][a-z0-9-]{0,149}$/.test(value)?value:null;
+const field=(value,max,min=0)=>{
+  if(typeof value!=='string'||value.trim().length<min||value.trim().length>max)error('Comprueba la longitud de los campos.');
+  return value.trim();
+};
+const configFields=['version','model','launcher','resolution','quality','fps','tdp','vram','scaling','frameGeneration','power','driver','stability','issues','notes'];
+const reasons=['spam','insultos','acoso','ilegal','datos personales','enlaces peligrosos','fuera de temática'];
+const statuses=['public','pending','hidden','deleted'];
+const limit=20;
+
+async function body(request){
+  if(request.headers.get('content-type')?.split(';')[0]!=='application/json')error('Formato no admitido.',415);
+  const reader=request.body?.getReader();
+  if(!reader)error('Faltan datos.');
+  const decoder=new TextDecoder();
+  let size=0,value='';
+  for(;;){
+    const chunk=await reader.read();
+    if(chunk.done)break;
+    size+=chunk.value.byteLength;
+    if(size>24576){await reader.cancel();error('Solicitud demasiado grande.',413);}
+    value+=decoder.decode(chunk.value,{stream:true});
+  }
+  try{
+    const parsed=JSON.parse(value+decoder.decode());
+    if(!parsed||Array.isArray(parsed)||typeof parsed!=='object')error('Datos no válidos.');
+    return parsed;
+  }catch{error('Datos no válidos.');}
+}
+
+async function verifyTurnstile(env,request,response){
+  if(!env.TURNSTILE_SECRET||!env.TURNSTILE_SITE_KEY)error('La participación aún no está habilitada.',503);
+  const result=await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify',{
+    method:'POST',body:new URLSearchParams({secret:env.TURNSTILE_SECRET,response:field(response,2048,1)}),
+    signal:AbortSignal.timeout(5000)
+  });
+  const verdict=await result.json();
+  if(!verdict.success||verdict.hostname!==new URL(request.url).hostname||verdict.action!=='community_session')
+    error('Repite la verificación de seguridad.',403);
+}
+
+async function admin(request,env){
+  if(!env.ADMIN_TOKEN||env.ADMIN_TOKEN.length<32)error('Administración deshabilitada.',503);
+  const authorization=request.headers.get('Authorization')||'';
+  if(!authorization.startsWith('Bearer ')||authorization.length>512)error('Acceso reservado.',401);
+  const [expected,actual]=await Promise.all([digest(env.ADMIN_TOKEN),digest(authorization.slice(7))]);
+  let mismatch=0;
+  for(let i=0;i<expected.length;i++)mismatch|=expected.charCodeAt(i)^actual.charCodeAt(i);
+  if(mismatch)error('Acceso reservado.',401);
+}
+
+export async function onRequest({request,env}){
+  try{return await route(request,env);}
+  catch(e){
+    if(e.status)return json({error:e.message},e.status);
+    if(/UNIQUE constraint/i.test(String(e)))return json({error:'Ya existe un registro equivalente. Actualiza la página.'},409);
+    return json({error:'Servicio temporalmente no disponible. Inténtalo más tarde.'},503);
+  }
+}
+
+async function route(request,env){
+  const url=new URL(request.url), path=url.pathname.slice(5).split('/'), query=url.searchParams;
+  const [resource,id,action]=path, method=request.method;
+  if(path.length>3||action&&resource==='admin')error('Ruta no encontrada.',404);
+  if(method!=='GET'&&(method!=='POST'||request.headers.get('Origin')!==url.origin))error('Origen o método no autorizado.',403);
+  if(!env.DB)error('La base de datos de la comunidad aún no está configurada.',503);
+  const db=env.DB;
+  const sql=(s,...args)=>db.prepare(s).bind(...args);
+  const first=(s,...args)=>sql(s,...args).first();
+  const all=async(s,...args)=>(await sql(s,...args).all()).results;
+  const run=(s,...args)=>sql(s,...args).run();
+  const timestamp=now();
+  const cookie=request.headers.get('Cookie')?.match(/(?:^|;\s*)__Host-ally_session=([a-f0-9]{64})(?=;|$)/)?.[1];
+  const owner=cookie?await digest(cookie):null;
+  const who=owner?await first('SELECT id,blocked_until FROM sessions WHERE id=? AND expires>?',owner,timestamp):null;
+  const throttle=async(key,max,window)=>{
+    const expires=(Math.floor(timestamp/window)+1)*window;
+    const row=await first('INSERT INTO rate VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET hits=hits+1 WHERE hits<? RETURNING hits',key+':'+expires,expires,max);
+    if(!row)error('Has alcanzado el límite. Inténtalo más tarde.',429);
+  };
+  if(resource==='admin'){
+    await admin(request,env);
+    if(method==='GET'){
+      const tables=['posts','comments','reports','audit','categories','settings'];
+      if(id==='export'){
+        const table=query.get('table');
+        if(![...tables,'sessions','votes','notices'].includes(table))error('Tabla no válida.');
+        return json({rows:await all('SELECT rowid AS cursor,* FROM '+table+' WHERE rowid>? ORDER BY rowid LIMIT 200',positive(query.get('after'))||0)});
+      }
+      return json(Object.fromEntries(await Promise.all(tables.map(async table=>[table,await all('SELECT * FROM '+table+' ORDER BY id DESC LIMIT 50')]))));
+    }
+    const data=await body(request), target=positive(data.id);
+    let statement,notice;
+    if(id==='settings'){
+      statement=sql('UPDATE settings SET readonly=?,stop_posts=?,review=? WHERE id=1',+!!data.readonly,+!!data.stop_posts,+!!data.review);
+    }else if(id==='category'){
+      if(data.delete){
+        if(await first('SELECT id FROM posts WHERE category=? LIMIT 1',target))error('Oculta la categoría o mueve sus publicaciones antes de eliminarla.',409);
+        statement=sql('DELETE FROM categories WHERE id=?',target);
+      }else{
+        const name=field(data.name,70,2), position=positive(data.position)||1;
+        statement=target?sql('UPDATE categories SET name=?,position=?,hidden=? WHERE id=?',name,position,+!!data.hidden,target):
+          sql('INSERT INTO categories(name,position,hidden) VALUES(?,?,?)',name,position,+!!data.hidden);
+      }
+    }else if(id==='report'&&target)statement=sql('UPDATE reports SET closed=1 WHERE id=?',target);
+    else if(id==='block'&&/^[a-f0-9]{64}$/.test(data.owner||'')){
+      const seconds=Number(data.seconds);
+      if(!Number.isInteger(seconds)||seconds<0||seconds>31536000)error('Duración no válida.');
+      statement=sql('UPDATE sessions SET blocked_until=? WHERE id=?',data.permanent?253402300799:seconds?timestamp+seconds:0,data.owner);
+    }else if(['post','comment'].includes(id)&&target){
+      const table=id==='post'?'posts':'comments';
+      const record=await first('SELECT * FROM '+table+' WHERE id=?',target);
+      if(!record)error('Contenido no encontrado.',404);
+      if(data.status==='deleted')statement=sql("UPDATE "+table+" SET status='deleted',body=''"+(id==='post'?",title='[Publicación eliminada]',tags='[]',config=NULL":"")+' WHERE id=?',target);
+      else if(statuses.slice(0,3).includes(data.status)&&record.status!=='deleted')
+        statement=sql('UPDATE '+table+' SET status=? WHERE id=?',data.status,target);
+      else if(id==='post'&&record.status!=='deleted'){
+        statement=sql('UPDATE posts SET pinned=?,closed=? WHERE id=?',+!!data.pinned,+!!data.closed,target);
+      }else error('Acción no válida.');
+      notice=sql('INSERT INTO notices(owner,post,message,created) VALUES(?,?,?,?)',record.owner,id==='post'?target:record.post,'Moderación ha revisado tu contenido.',timestamp);
+    }else error('Acción no válida.');
+    await db.batch([statement,sql('INSERT INTO audit(action,target,created) VALUES(?,?,?)',id,String(target||data.owner||''),timestamp),...(notice?[notice]:[])]);
+    return json({ok:true});
+  }
+  if(resource==='meta'&&method==='GET'){
+    return json({categories:await all('SELECT id,name FROM categories WHERE hidden=0 ORDER BY position,id'),
+      session:!!who,siteKey:env.TURNSTILE_SITE_KEY||null,settings:await first('SELECT readonly,stop_posts,review FROM settings WHERE id=1')});
+  }
+  if(resource==='session'&&method==='POST'){
+    if(who)return json({ok:true});
+    const data=await body(request);
+    const ip=request.headers.get('CF-Connecting-IP');
+    if(!ip||!env.RATE_SECRET||env.RATE_SECRET.length<32)error('La participación aún no está habilitada.',503);
+    const encoder=new TextEncoder();
+    const keyMaterial=await crypto.subtle.importKey('raw',encoder.encode(env.RATE_SECRET),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+    const fingerprint=await crypto.subtle.sign('HMAC',keyMaterial,encoder.encode(Math.floor(timestamp/3600)+':'+ip));
+    const bucket=Array.from(new Uint8Array(fingerprint),v=>v.toString(16).padStart(2,'0')).join('');
+    await throttle('s:'+bucket,12,3600);
+    await verifyTurnstile(env,request,data.token);
+    if(Math.random()<0.03)await run('DELETE FROM rate WHERE rowid IN (SELECT rowid FROM rate WHERE expires<? LIMIT 100)',timestamp);
+    const key=token();
+    await run('INSERT INTO sessions(id,expires) VALUES(?,?)',await digest(key),timestamp+15552000);
+    return json({ok:true},201,{'Set-Cookie':'__Host-ally_session='+key+'; Path=/; Max-Age=15552000; Secure; HttpOnly; SameSite=Lax'});
+  }
+  if(resource==='notices'&&method==='GET'){
+    return json({rows:who?await all('SELECT id,post,message,created FROM notices WHERE owner=? ORDER BY id DESC LIMIT 30',owner):[]});
+  }
+  if(resource==='stats'&&method==='GET'){
+    const cacheKey=new Request(url.origin+'/api/stats-snapshot');
+    const cached=globalThis.caches?.default&&await caches.default.match(cacheKey);
+    if(cached)return cached;
+    const totals=await first("SELECT count(*) AS posts,coalesce(sum(replies),0) AS comments,coalesce(sum(config IS NOT NULL),0) AS configurations,coalesce(sum(debate=1 AND created>=?),0) AS recentDebates FROM posts WHERE status='public' AND category IN (SELECT id FROM categories WHERE hidden=0)",timestamp-604800);
+    const categories=await all("SELECT c.name,count(*) AS total FROM posts p JOIN categories c ON c.id=p.category WHERE p.status='public' AND c.hidden=0 GROUP BY c.id ORDER BY total DESC LIMIT 5");
+    const best=await all("SELECT id,title,score FROM posts WHERE status='public' AND category IN (SELECT id FROM categories WHERE hidden=0) ORDER BY score DESC,id DESC LIMIT 5");
+    const response=json({totals,categories,best},200,{'Cache-Control':'public, max-age=60, s-maxage=300'});
+    if(globalThis.caches?.default)await caches.default.put(cacheKey,response.clone()).catch(()=>{});
+    return response;
+  }
+  if(resource==='posts'&&method==='GET'){
+    const projection=`p.id,p.category,c.name AS categoryName,p.title,p.game,p.tags,p.config,p.debate,p.created,p.score,p.replies,p.pinned,p.closed,p.owner=? AS own,
+      coalesce((SELECT value FROM votes WHERE owner=? AND kind='post' AND target=p.id),0) AS vote`;
+    if(id){
+      const item=await first('SELECT '+projection+',p.body,p.status FROM posts p JOIN categories c ON c.id=p.category WHERE p.id=? AND c.hidden=0 AND (p.status=\'public\' OR (p.owner=? AND p.status=\'pending\'))',who?.id??null,who?.id??null,positive(id),who?.id??null);
+      if(!item)error('Publicación no disponible.',404);
+      return json(item);
+    }
+    const search=(query.get('q')||'').slice(0,100).match(/[\p{L}\p{N}]+/gu)?.slice(0,8);
+    const category=positive(query.get('category')), game=gameId(query.get('game'));
+    const orders={recent:'p.id',popular:'p.score',comments:'p.replies',trend:'(p.score+2*p.replies)'};
+    const sort=query.get('sort')||'recent', order=Object.hasOwn(orders,sort)?orders[sort]:orders.recent;
+    const conditions=["p.status='public'","c.hidden=0"], values=[who?.id??null,who?.id??null];
+    if(search?.length){conditions.push('p.id IN (SELECT rowid FROM post_search WHERE post_search MATCH ? LIMIT 200)');values.push(search.map(v=>'"'+v+'"*').join(' AND '));}
+    if(category){conditions.push('p.category=?');values.push(category);}
+    if(game){conditions.push('p.game=?');values.push(game);}
+    if(sort==='trend'){conditions.push('p.created>=?');values.push(timestamp-604800);}
+    const cursor=(query.get('after')||'').split(':');
+    if(cursor.length===3&&cursor.every(v=>/^-?\d{1,15}$/.test(v))){
+      conditions.push('(p.pinned,'+order+',p.id)<(?,?,?)');values.push(...cursor.map(Number));
+    }
+    const rows=await all('SELECT '+projection+',substr(p.body,1,320) AS body,'+order+' AS ranking FROM posts p JOIN categories c ON c.id=p.category WHERE '+conditions.join(' AND ')+' ORDER BY p.pinned DESC,ranking DESC,p.id DESC LIMIT '+(limit+1),...values);
+    const more=rows.length>limit;
+    const visible=rows.slice(0,limit), last=visible.at(-1);
+    return json({rows:visible,next:more?[last.pinned,last.ranking,last.id].join(':'):null});
+  }
+  if(resource==='comments'&&method==='GET'){
+    const post=positive(query.get('post')), parent=positive(query.get('parent'));
+    const sort=query.get('sort')==='popular'?'c.score':'c.id';
+    const cursor=(query.get('after')||'').match(/^(-?\d{1,15}):(\d{1,15})$/);
+    const rows=await all(`SELECT c.id,c.post,c.parent,c.depth,c.created,c.status,CASE WHEN c.status='public' THEN c.body ELSE '' END AS body,
+      c.score,c.owner=? AS own,c.owner=p.owner AS author,${sort} AS ranking,
+      EXISTS(SELECT 1 FROM comments child WHERE child.parent=c.id AND child.status IN ('public','deleted')) AS children,
+      coalesce((SELECT value FROM votes WHERE owner=? AND kind='comment' AND target=c.id),0) AS vote
+      FROM comments c JOIN posts p ON p.id=c.post JOIN categories k ON k.id=p.category
+      WHERE p.status='public' AND k.hidden=0 AND c.post=? AND c.parent IS ? AND c.status IN ('public','deleted')
+      ${cursor?'AND ('+sort+',c.id)<(?,?)':''} ORDER BY ranking DESC,c.id DESC LIMIT 21`,who?.id??null,who?.id??null,post,parent,...(cursor?[+cursor[1],+cursor[2]]:[]));
+    const visible=rows.slice(0,20), last=visible.at(-1);
+    return json({rows:visible,next:rows.length>20?last.ranking+':'+last.id:null});
+  }
+  if(method!=='POST')error('Ruta no encontrada.',404);
+  if(!who)error('Verifica la sesión anónima para participar.',401);
+  if(who.blocked_until>timestamp)error('Esta sesión está restringida.',403);
+  const data=await body(request), settings=await first('SELECT * FROM settings WHERE id=1');
+  if(!settings||settings.readonly)error('La comunidad está en modo de solo lectura.',403);
+  const target=positive(id);
+  if(resource==='posts'&&!id){
+    if(settings.stop_posts)error('Las publicaciones nuevas están temporalmente desactivadas.',403);
+    const title=field(data.title,150,4), content=field(data.body,5000,4), category=positive(data.category);
+    if(!await first('SELECT id FROM categories WHERE id=? AND hidden=0',category))error('Categoría no disponible.');
+    const game=gameId(data.game), debate=+!!data.debate;
+    if((data.game||debate||data.config)&&!game)error('Identificador de juego no válido.');
+    const tags=(Array.isArray(data.tags)?data.tags:[]).slice(0,5).map(v=>field(v,24,1));
+    const config=data.config?Object.fromEntries(configFields.flatMap(key=>typeof data.config[key]==='string'&&data.config[key].trim()?[[key,field(data.config[key],500)]]:[])):null;
+    if(config&&(!config.model||!config.resolution))error('Indica modelo y resolución.');
+    if(debate){
+      const existing=await first("SELECT id,status,owner FROM posts WHERE debate=1 AND game=? AND status NOT IN ('deleted','hidden')",game);
+      if(existing){
+        if(existing.status==='pending'&&existing.owner!==owner)error('El debate está pendiente de revisión.',409);
+        return json({id:existing.id,status:existing.status});
+      }
+    }
+    await throttle('p:'+owner,5,3600);
+    const hash=await digest((title+'\n'+content).normalize('NFC').toLowerCase().replace(/\s+/g,' '));
+    const status=settings.review?'pending':'public';
+    const row=await first(`INSERT INTO posts(owner,category,title,body,game,tags,config,debate,status,hash,created)
+      SELECT ?,?,?,?,?,?,?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM posts WHERE owner=? AND hash=? AND created>?) RETURNING id`,
+      owner,category,title,content,game,JSON.stringify(tags),config?JSON.stringify(config):null,debate,status,hash,timestamp,owner,hash,timestamp-86400);
+    if(!row)error('Ya has publicado ese contenido recientemente.',409);
+    return json({...row,status},201);
+  }
+  if(resource==='comments'&&!id){
+    await throttle('c:'+owner,20,600);
+    const post=positive(data.post), parent=positive(data.parent), content=field(data.body,2000,2);
+    const status=settings.review?'pending':'public';
+    const row=await first(`INSERT INTO comments(post,parent,depth,owner,body,status,created)
+      SELECT p.id,?,coalesce(c.depth+1,0),?,?,?,? FROM posts p
+      JOIN categories k ON k.id=p.category LEFT JOIN comments c ON c.id=? AND c.post=p.id AND c.status IN ('public','deleted') AND c.depth<3
+      WHERE p.id=? AND p.status='public' AND p.closed=0 AND k.hidden=0 AND (? IS NULL OR c.id IS NOT NULL)
+      AND NOT EXISTS(SELECT 1 FROM comments d WHERE d.owner=? AND d.post=p.id AND d.body=? AND d.created>?) RETURNING id`,
+      parent,owner,content,status,timestamp,parent,post,parent,owner,content,timestamp-600);
+    if(!row)error('El debate está cerrado, la respuesta está duplicada o el hilo alcanzó el límite.',409);
+    return json({...row,status},201);
+  }
+  if(['posts','comments'].includes(resource)&&target&&['edit','delete'].includes(action)){
+    await throttle('edit:'+owner,20,600);
+    const table=resource, max=table==='posts'?5000:2000;
+    const removal=action==='delete';
+    const fields=removal?"body='',status='deleted'"+(table==='posts'?",title='[Publicación eliminada]',tags='[]',config=NULL":""):
+      'body=?'+(table==='posts'?',title=?':'')+(settings.review?",status='pending'":"");
+    const args=removal?[]:[field(data.body,max,2),...(table==='posts'?[field(data.title,150,4)]:[])];
+    if(!await first('UPDATE '+table+' SET '+fields+" WHERE id=? AND owner=? AND status IN ('public','pending') RETURNING id",...args,target,owner))error('Contenido propio no disponible.',404);
+    return json({ok:true});
+  }
+  if(['vote','report'].includes(resource)){
+    const kind=data.kind, item=positive(data.target);
+    if(!['post','comment'].includes(kind)||!item)error('Contenido no válido.');
+    const allowed=kind==='post'?"SELECT p.id FROM posts p JOIN categories k ON k.id=p.category WHERE p.id=? AND p.status='public' AND k.hidden=0":
+      "SELECT c.id FROM comments c JOIN posts p ON p.id=c.post JOIN categories k ON k.id=p.category WHERE c.id=? AND c.status='public' AND p.status='public' AND k.hidden=0";
+    if(resource==='vote'){
+      if(![-1,0,1].includes(data.value))error('Voto no válido.');
+      await throttle('v:'+owner,30,60);
+      if(data.value===0)await run('DELETE FROM votes WHERE owner=? AND kind=? AND target=?',owner,kind,item);
+      else if(!await first('INSERT INTO votes(owner,kind,target,value) SELECT ?,?,visible.id,? FROM ('+allowed+') visible WHERE true ON CONFLICT(owner,kind,target) DO UPDATE SET value=excluded.value RETURNING value',owner,kind,data.value,item))error('Contenido no disponible.',404);
+      return json({ok:true});
+    }
+    if(!reasons.includes(data.reason))error('Motivo no válido.');
+    await throttle('r:'+owner,10,3600);
+    if(!await first(allowed,item))error('Contenido no disponible.',404);
+    await run('INSERT INTO reports(owner,kind,target,reason,details,created) VALUES(?,?,?,?,?,?)',owner,kind,item,data.reason,field(data.details||'',1000),timestamp);
+    return json({ok:true},201);
+  }
+  error('Ruta no encontrada.',404);
+}

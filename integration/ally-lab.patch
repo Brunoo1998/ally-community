@@ -1,0 +1,148 @@
+diff --git a/dist/app.js b/dist/app.js
+index 59c13d0..453258f 100644
+--- a/dist/app.js
++++ b/dist/app.js
+@@ -194,6 +194,12 @@ function settings(game,detail,requested) {
+     });
+   } else picker.textContent=units(presets[0].name);
+   p.append(picker);
++  const community = new URL('https://ally-community.pages.dev/');
++  community.search = new URLSearchParams({game:game.id,title:game.title});
++  const links=el('div','hero-links');
++  const share=anchor('Compartir mi configuración',community.href,'btn');
++  links.append(anchor('Debate de la comunidad',community.href,'btn'),share);
++  p.append(links);
+   if(detail.fromText) p.append(el('p','small','Ajustes descritos en el texto de la guía.'));
+   const controls=el('div','table-tools'), count=el('span');
+   count.setAttribute('role','status'); controls.append(count);
+@@ -213,6 +219,14 @@ function settings(game,detail,requested) {
+   thead.append(row); table.append(caption,thead,body); p.append(controls,table);
+   function draw(){
+     const preset=presets[current];
++    const draft=new URL(community);
++    draft.searchParams.set('share','1');
++    draft.searchParams.set('model','Xbox ROG Ally X');
++    const find=(pattern)=>preset.rows.find(([key])=>pattern.test(key))?.[1];
++    const resolution=find(/^(?:output |screen |display )?resolution$/i)||preset.name.match(/\b(?:720|900|1080)p\b/i)?.[0];
++    const known={resolution,quality:find(/^(?:graphic[s]? )?(?:quality|preset)$/i),scaling:find(/upscal|fsr/i),frameGeneration:find(/frame generation/i)};
++    for(const [key,value] of Object.entries(known))if(value)draft.searchParams.set(key,String(value).slice(0,100));
++    share.href=draft.href;
+     if(presets.length>1) Array.from(picker.children).forEach((b,i)=>b.setAttribute('aria-pressed',String(i===current)));
+     caption.textContent='Configuración de '+game.title+' · '+preset.name;
+     count.textContent=preset.rows.length+(preset.rows.length===1?' ajuste':' ajustes');
+diff --git a/dist/emulacion.html b/dist/emulacion.html
+index 5373263..3b12c47 100644
+--- a/dist/emulacion.html
++++ b/dist/emulacion.html
+@@ -2,7 +2,7 @@
+ <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+ <title>Retro · Ally Lab</title><link rel="icon" href="./assets/ally-mark.svg">
+ <link rel="stylesheet" href="./style.css"><link rel="stylesheet" href="./lab.css?v=82"><link rel="stylesheet" href="./dashboard.css?v=82"><link rel="stylesheet" href="./emulacion.css?v=87">
+-<script type="module" src="./lab-controls.js?v=65"></script><script type="module" src="./descargamasiva.js?v=ally-ai-1"></script><link rel="stylesheet" href="./mobile-nav.css?v=87"><link rel="stylesheet" href="/ally-ai.css?v=9"><script type="module" src="/ally-ai.js?v=13"></script></head>
++<script type="module" src="./lab-controls.js?v=65"></script><script type="module" src="./descargamasiva.js?v=ally-ai-1"></script><link rel="stylesheet" href="./mobile-nav.css?v=community-1"><link rel="stylesheet" href="/ally-ai.css?v=9"><script type="module" src="/ally-ai.js?v=13"></script></head>
+ <body class="emulation"><a class="skip" href="#contenido">Saltar al contenido</a>
+ <header class="mast"><div class="wrap bar"><a class="brand" href="./index.html"><img src="./assets/ally-mark.svg" width="40" height="40" alt=""><span>ALLY <em>LAB</em></span></a><div id="pad-status" class="pad-status" hidden>
+ <span class="pad-status-label" role="status"></span>
+@@ -12,7 +12,7 @@
+ <li><kbd>Y</kbd><kbd class="pad-generic" aria-label="Triángulo">△</kbd> Buscar</li>
+ <li><kbd>L3</kbd><kbd>R3</kbd> Ally AI</li>
+ </ul>
+-</div><nav aria-label="Principal"><a href="./index.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#games"></use></svg><span>Juegos</span></a><a href="./index.html#juego/world-of-warcraft-forever-rog-xbox-ally-x-game-settings?sim=1"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#fps"></use></svg><span>Simulador FPS</span></a><a href="./ports.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#ports"></use></svg><span>Ports y Recompilaciones</span></a><a href="./news.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#news"></use></svg><span>Actualizaciones ROG Ally</span></a><a href="./gratis.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#free"></use></svg><span>Juegos gratis</span></a><a href="./emulacion.html" class="active" aria-current="page"><svg class="nav-icon" aria-hidden="true"><use href="./assets/nav-icons.svg?v=71#retro"></use></svg><span>Retro</span></a></nav><span class="model-tag">Z2 EXTREME</span></div></header>
++</div><nav aria-label="Principal"><a href="./index.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#games"></use></svg><span>Juegos</span></a><a href="./index.html#juego/world-of-warcraft-forever-rog-xbox-ally-x-game-settings?sim=1"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#fps"></use></svg><span>Simulador FPS</span></a><a href="./ports.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#ports"></use></svg><span>Ports y Recompilaciones</span></a><a href="./news.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#news"></use></svg><span>Actualizaciones ROG Ally</span></a><a href="./gratis.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#free"></use></svg><span>Juegos gratis</span></a><a href="./emulacion.html" class="active" aria-current="page"><svg class="nav-icon" aria-hidden="true"><use href="./assets/nav-icons.svg?v=71#retro"></use></svg><span>Retro</span></a><a href="https://ally-community.pages.dev/"><svg class="nav-icon" aria-hidden="true"><use href="./assets/nav-icons.svg#news"></use></svg><span>Comunidad</span></a></nav><span class="model-tag">Z2 EXTREME</span></div></header>
+ <main class="wrap" id="contenido" tabindex="-1">
+ <header class="port-heading"><h1>Retro</h1><p>Elige una consola para consultar sus juegos y enlaces.</p></header>
+ <aside class="retro-access-note" id="retro-access-note" aria-labelledby="retro-access-title">
+diff --git a/dist/gratis.html b/dist/gratis.html
+index 636eaba..f92f951 100644
+--- a/dist/gratis.html
++++ b/dist/gratis.html
+@@ -1,5 +1,5 @@
+ <!doctype html>
+-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080a10"><title>Juegos gratis y pruebas temporales · Ally Lab</title><link rel="stylesheet" href="./style.css"><link rel="stylesheet" href="./lab.css?v=82"><link rel="stylesheet" href="./dashboard.css?v=82"><link rel="stylesheet" href="./gratis.css?v=55"><script type="module" src="./gratis.js?v=sin-itch-1"></script><script type="module" src="./lab-controls.js?v=65"></script><link rel="icon" href="./assets/ally-mark.svg" type="image/svg+xml"><link rel="stylesheet" href="./mobile-nav.css?v=87"><link rel="stylesheet" href="/ally-ai.css?v=9"><script type="module" src="/ally-ai.js?v=13"></script></head><body><a class="skip" href="#contenido">Saltar al contenido</a>
++<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080a10"><title>Juegos gratis y pruebas temporales · Ally Lab</title><link rel="stylesheet" href="./style.css"><link rel="stylesheet" href="./lab.css?v=82"><link rel="stylesheet" href="./dashboard.css?v=82"><link rel="stylesheet" href="./gratis.css?v=55"><script type="module" src="./gratis.js?v=sin-itch-1"></script><script type="module" src="./lab-controls.js?v=65"></script><link rel="icon" href="./assets/ally-mark.svg" type="image/svg+xml"><link rel="stylesheet" href="./mobile-nav.css?v=community-1"><link rel="stylesheet" href="/ally-ai.css?v=9"><script type="module" src="/ally-ai.js?v=13"></script></head><body><a class="skip" href="#contenido">Saltar al contenido</a>
+ <header class="mast"><div class="wrap bar"><a class="brand" href="./index.html"><img src="./assets/ally-mark.svg" width="40" height="40" alt=""><span>ALLY <em>LAB</em></span></a><div id="pad-status" class="pad-status" hidden>
+ <span class="pad-status-label" role="status"></span>
+ <ul class="pad-legend" aria-label="Controles del mando">
+@@ -8,7 +8,7 @@
+ <li><kbd>Y</kbd><kbd class="pad-generic" aria-label="Triángulo">△</kbd> Buscar</li>
+ <li><kbd>L3</kbd><kbd>R3</kbd> Ally AI</li>
+ </ul>
+-</div><nav aria-label="Principal"><a href="./index.html#juegos"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#games"></use></svg><span>Juegos</span></a><a href="./index.html#simulador"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#fps"></use></svg><span>Simulador FPS</span></a><a href="./ports.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#ports"></use></svg><span>Ports y Recompilaciones</span></a><a href="./news.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#news"></use></svg><span>Actualizaciones ROG Ally</span></a><a class="active" aria-current="page" href="./gratis.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#free"></use></svg><span>Juegos gratis</span></a><a href="./emulacion.html"><svg class="nav-icon" aria-hidden="true"><use href="./assets/nav-icons.svg?v=71#retro"></use></svg><span>Retro</span></a></nav><span class="model-tag">Z2 EXTREME</span></div></header>
++</div><nav aria-label="Principal"><a href="./index.html#juegos"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#games"></use></svg><span>Juegos</span></a><a href="./index.html#simulador"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#fps"></use></svg><span>Simulador FPS</span></a><a href="./ports.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#ports"></use></svg><span>Ports y Recompilaciones</span></a><a href="./news.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#news"></use></svg><span>Actualizaciones ROG Ally</span></a><a class="active" aria-current="page" href="./gratis.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#free"></use></svg><span>Juegos gratis</span></a><a href="./emulacion.html"><svg class="nav-icon" aria-hidden="true"><use href="./assets/nav-icons.svg?v=71#retro"></use></svg><span>Retro</span></a><a href="https://ally-community.pages.dev/"><svg class="nav-icon" aria-hidden="true"><use href="./assets/nav-icons.svg#news"></use></svg><span>Comunidad</span></a></nav><span class="model-tag">Z2 EXTREME</span></div></header>
+ 
+ <main class="wrap free-main" id="contenido" tabindex="-1">
+ <header class="hero free-hero"><div class="intro"><h1>Juegos gratis <em>y pruebas temporales</em></h1><p>Juegos que puedes conservar y juegos de pago que puedes probar gratis durante unos días, sin confundir ambas ofertas.</p></div></header>
+diff --git a/dist/index.html b/dist/index.html
+index 1aa1838..ca54b6b 100644
+--- a/dist/index.html
++++ b/dist/index.html
+@@ -1,5 +1,5 @@
+ <!doctype html>
+-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080a10"><meta name="description" content="Consulta los juegos, configuraciones y pruebas de rendimiento para ROG Xbox Ally X con Ryzen AI Z2 Extreme."><title>Ally Lab · Catálogo de juegos</title><link rel="stylesheet" href="./style.css?v=42"><link rel="stylesheet" href="./capturas.css?v=41"><script type="module" src="./app.js?v=ally-ai-2"></script><link rel="stylesheet" href="./lab.css?v=82"><link rel="stylesheet" href="./dashboard.css?v=82"><link rel="icon" href="./assets/ally-mark.svg" type="image/svg+xml"><script type="module" src="./lab-controls.js?v=65"></script><link rel="stylesheet" href="./fps-lab.css?v=55"><link rel="stylesheet" href="./mobile-nav.css?v=87"><link rel="stylesheet" href="/ally-ai.css?v=9"><script type="module" src="/ally-ai.js?v=13"></script></head>
++<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080a10"><meta name="description" content="Consulta los juegos, configuraciones y pruebas de rendimiento para ROG Xbox Ally X con Ryzen AI Z2 Extreme."><title>Ally Lab · Catálogo de juegos</title><link rel="stylesheet" href="./style.css?v=42"><link rel="stylesheet" href="./capturas.css?v=41"><script type="module" src="./app.js?v=community-1"></script><link rel="stylesheet" href="./lab.css?v=82"><link rel="stylesheet" href="./dashboard.css?v=82"><link rel="icon" href="./assets/ally-mark.svg" type="image/svg+xml"><script type="module" src="./lab-controls.js?v=65"></script><link rel="stylesheet" href="./fps-lab.css?v=55"><link rel="stylesheet" href="./mobile-nav.css?v=community-1"><link rel="stylesheet" href="/ally-ai.css?v=9"><script type="module" src="/ally-ai.js?v=13"></script></head>
+ <body><a class="skip" href="#contenido">Saltar al contenido</a>
+ <header class="mast"><div class="wrap bar"><a class="brand" href="#juegos" aria-label="Ally Lab, inicio"><img src="./assets/ally-mark.svg" width="40" height="40" alt=""><span>ALLY <em>LAB</em></span></a><div id="pad-status" class="pad-status" hidden>
+ <span class="pad-status-label" role="status"></span>
+@@ -10,7 +10,7 @@
+ <li><kbd>Y</kbd><kbd class="pad-generic" aria-label="Triángulo">△</kbd> Buscar</li>
+ <li><kbd>L3</kbd><kbd>R3</kbd> Ally AI</li>
+ </ul>
+-</div><nav aria-label="Principal"><a class="active" href="#juegos" aria-current="page"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#games"></use></svg><span>Juegos</span></a><a id="sim-link" href="#simulador"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#fps"></use></svg><span>Simulador FPS</span></a><a href="./ports.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#ports"></use></svg><span>Ports y Recompilaciones</span></a><a href="./news.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#news"></use></svg><span>Actualizaciones ROG Ally</span></a><a href="./gratis.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#free"></use></svg><span>Juegos gratis</span></a><a href="./emulacion.html"><svg class="nav-icon" aria-hidden="true"><use href="./assets/nav-icons.svg?v=71#retro"></use></svg><span>Retro</span></a></nav><span class="model-tag">Z2 EXTREME</span></div></header>
++</div><nav aria-label="Principal"><a class="active" href="#juegos" aria-current="page"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#games"></use></svg><span>Juegos</span></a><a id="sim-link" href="#simulador"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#fps"></use></svg><span>Simulador FPS</span></a><a href="./ports.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#ports"></use></svg><span>Ports y Recompilaciones</span></a><a href="./news.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#news"></use></svg><span>Actualizaciones ROG Ally</span></a><a href="./gratis.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#free"></use></svg><span>Juegos gratis</span></a><a href="./emulacion.html"><svg class="nav-icon" aria-hidden="true"><use href="./assets/nav-icons.svg?v=71#retro"></use></svg><span>Retro</span></a><a href="https://ally-community.pages.dev/"><svg class="nav-icon" aria-hidden="true"><use href="./assets/nav-icons.svg#news"></use></svg><span>Comunidad</span></a></nav><span class="model-tag">Z2 EXTREME</span></div></header>
+ <main class="wrap" id="contenido" tabindex="-1"><div id="catalog">
+ <section class="hero"><div class="intro"><span class="hardware"><i aria-hidden="true"></i> RYZEN AI Z2 EXTREME</span><h1>Catálogo de <em>juegos</em></h1><p>Ajustes gráficos y pruebas de rendimiento para tu ROG Xbox Ally X.</p><div class="hero-links"><a class="btn hero-primary" href="#biblioteca" id="browse-games">Explorar juegos</a><a class="btn" id="hero-sim-link" href="#simulador">Abrir el simulador</a></div></div><div class="device"><span aria-hidden="true"></span><img src="./assets/consola.webp" width="670" height="390" alt="ASUS ROG Xbox Ally X negra" fetchpriority="high"></div></section>
+ <section id="biblioteca"><div class="section-head"><h2 id="library-heading" tabindex="-1">Todos los juegos</h2><span id="total" class="count" hidden></span></div>
+diff --git a/dist/mobile-nav.css b/dist/mobile-nav.css
+index 8264c01..90adafc 100644
+--- a/dist/mobile-nav.css
++++ b/dist/mobile-nav.css
+@@ -79,7 +79,7 @@
+   .mast .bar nav[aria-label="Principal"] {
+     grid-column:1/-1;
+     grid-row:2;
+-    grid-template-columns:repeat(6,minmax(0,1fr));
++    grid-template-columns:repeat(7,minmax(0,1fr));
+     gap:.25rem;
+   }
+   .mast .bar nav[aria-label="Principal"] > a {
+diff --git a/dist/news.html b/dist/news.html
+index 087c66a..ce514bc 100644
+--- a/dist/news.html
++++ b/dist/news.html
+@@ -1,6 +1,6 @@
+ <!doctype html>
+ <html lang="es">
+-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#080a10"><title>Actualizaciones ROG Ally</title><link rel="stylesheet" href="./style.css?v=21"><link rel="stylesheet" href="./news.css?v=34"><script type="module" src="./news.js?v=rog-ally-updates"></script><link rel="stylesheet" href="./lab.css?v=82"><link rel="stylesheet" href="./dashboard.css?v=82"><link rel="icon" href="./assets/ally-mark.svg" type="image/svg+xml"><script type="module" src="./lab-controls.js?v=65"></script><link rel="stylesheet" href="./mobile-nav.css?v=87"><link rel="stylesheet" href="/ally-ai.css?v=9"><script type="module" src="/ally-ai.js?v=13"></script></head>
++<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#080a10"><title>Actualizaciones ROG Ally</title><link rel="stylesheet" href="./style.css?v=21"><link rel="stylesheet" href="./news.css?v=34"><script type="module" src="./news.js?v=rog-ally-updates"></script><link rel="stylesheet" href="./lab.css?v=82"><link rel="stylesheet" href="./dashboard.css?v=82"><link rel="icon" href="./assets/ally-mark.svg" type="image/svg+xml"><script type="module" src="./lab-controls.js?v=65"></script><link rel="stylesheet" href="./mobile-nav.css?v=community-1"><link rel="stylesheet" href="/ally-ai.css?v=9"><script type="module" src="/ally-ai.js?v=13"></script></head>
+ <body>
+ <header class="mast"><div class="wrap bar"><a class="brand" href="./index.html"><img src="./assets/ally-mark.svg" width="40" height="40" alt=""><span>ALLY <em>LAB</em></span></a><div id="pad-status" class="pad-status" hidden>
+ <span class="pad-status-label" role="status"></span>
+@@ -10,7 +10,7 @@
+ <li><kbd>Y</kbd><kbd class="pad-generic" aria-label="Triángulo">△</kbd> Buscar</li>
+ <li><kbd>L3</kbd><kbd>R3</kbd> Ally AI</li>
+ </ul>
+-</div><nav aria-label="Principal"><a href="./index.html#juegos"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#games"></use></svg><span>Juegos</span></a><a href="./index.html#juego/world-of-warcraft-forever-rog-xbox-ally-x-game-settings?sim=1"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#fps"></use></svg><span>Simulador FPS</span></a><a href="./ports.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#ports"></use></svg><span>Ports y Recompilaciones</span></a><a class="active" aria-current="page" href="./news.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#news"></use></svg><span>Actualizaciones ROG Ally</span></a><a href="./gratis.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#free"></use></svg><span>Juegos gratis</span></a><a href="./emulacion.html"><svg class="nav-icon" aria-hidden="true"><use href="./assets/nav-icons.svg?v=71#retro"></use></svg><span>Retro</span></a></nav><span class="model-tag">Z2 EXTREME</span></div></header>
++</div><nav aria-label="Principal"><a href="./index.html#juegos"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#games"></use></svg><span>Juegos</span></a><a href="./index.html#juego/world-of-warcraft-forever-rog-xbox-ally-x-game-settings?sim=1"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#fps"></use></svg><span>Simulador FPS</span></a><a href="./ports.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#ports"></use></svg><span>Ports y Recompilaciones</span></a><a class="active" aria-current="page" href="./news.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#news"></use></svg><span>Actualizaciones ROG Ally</span></a><a href="./gratis.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#free"></use></svg><span>Juegos gratis</span></a><a href="./emulacion.html"><svg class="nav-icon" aria-hidden="true"><use href="./assets/nav-icons.svg?v=71#retro"></use></svg><span>Retro</span></a><a href="https://ally-community.pages.dev/"><svg class="nav-icon" aria-hidden="true"><use href="./assets/nav-icons.svg#news"></use></svg><span>Comunidad</span></a></nav><span class="model-tag">Z2 EXTREME</span></div></header>
+ <main class="wrap news-block">
+  <header class="news-mast"><h1>Actualizaciones <em>ROG Ally</em></h1><p>BIOS, firmware, controladores y software para la Xbox ROG Ally X.</p></header>
+  <section aria-labelledby="archive-title" id="archivo">
+diff --git a/dist/ports.html b/dist/ports.html
+index 7648f8a..fd96bcf 100644
+--- a/dist/ports.html
++++ b/dist/ports.html
+@@ -1,5 +1,5 @@
+ <!doctype html>
+-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080a10"><title>Ports y Recompilaciones · Ally Lab</title><link rel="stylesheet" href="./style.css"><link rel="stylesheet" href="./ports.css"><script type="module" src="./ports.js?v=55"></script><link rel="stylesheet" href="./lab.css?v=82"><link rel="stylesheet" href="./dashboard.css?v=82"><link rel="icon" href="./assets/ally-mark.svg" type="image/svg+xml"><script type="module" src="./lab-controls.js?v=65"></script><link rel="stylesheet" href="./fps-lab.css?v=55"><link rel="stylesheet" href="./mobile-nav.css?v=87"><link rel="stylesheet" href="/ally-ai.css?v=9"><script type="module" src="/ally-ai.js?v=13"></script></head>
++<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080a10"><title>Ports y Recompilaciones · Ally Lab</title><link rel="stylesheet" href="./style.css"><link rel="stylesheet" href="./ports.css"><script type="module" src="./ports.js?v=55"></script><link rel="stylesheet" href="./lab.css?v=82"><link rel="stylesheet" href="./dashboard.css?v=82"><link rel="icon" href="./assets/ally-mark.svg" type="image/svg+xml"><script type="module" src="./lab-controls.js?v=65"></script><link rel="stylesheet" href="./fps-lab.css?v=55"><link rel="stylesheet" href="./mobile-nav.css?v=community-1"><link rel="stylesheet" href="/ally-ai.css?v=9"><script type="module" src="/ally-ai.js?v=13"></script></head>
+ <body><a class="skip" href="#principal">Saltar al contenido</a>
+ <header class="mast"><div class="wrap bar"><a class="brand" href="./index.html"><img src="./assets/ally-mark.svg" width="40" height="40" alt=""><span>ALLY <em>LAB</em></span></a><div id="pad-status" class="pad-status" hidden>
+ <span class="pad-status-label" role="status"></span>
+@@ -9,7 +9,7 @@
+ <li><kbd>Y</kbd><kbd class="pad-generic" aria-label="Triángulo">△</kbd> Buscar</li>
+ <li><kbd>L3</kbd><kbd>R3</kbd> Ally AI</li>
+ </ul>
+-</div><nav aria-label="Principal"><a href="./index.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#games"></use></svg><span>Juegos</span></a><a href="./index.html#juego/world-of-warcraft-forever-rog-xbox-ally-x-game-settings?sim=1"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#fps"></use></svg><span>Simulador FPS</span></a><a href="./ports.html" class="active" aria-current="page"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#ports"></use></svg><span>Ports y Recompilaciones</span></a><a href="./news.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#news"></use></svg><span>Actualizaciones ROG Ally</span></a><a href="./gratis.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#free"></use></svg><span>Juegos gratis</span></a><a href="./emulacion.html"><svg class="nav-icon" aria-hidden="true"><use href="./assets/nav-icons.svg?v=71#retro"></use></svg><span>Retro</span></a></nav><span class="model-tag">Z2 EXTREME</span></div></header>
++</div><nav aria-label="Principal"><a href="./index.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#games"></use></svg><span>Juegos</span></a><a href="./index.html#juego/world-of-warcraft-forever-rog-xbox-ally-x-game-settings?sim=1"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#fps"></use></svg><span>Simulador FPS</span></a><a href="./ports.html" class="active" aria-current="page"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#ports"></use></svg><span>Ports y Recompilaciones</span></a><a href="./news.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#news"></use></svg><span>Actualizaciones ROG Ally</span></a><a href="./gratis.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="./assets/nav-icons.svg#free"></use></svg><span>Juegos gratis</span></a><a href="./emulacion.html"><svg class="nav-icon" aria-hidden="true"><use href="./assets/nav-icons.svg?v=71#retro"></use></svg><span>Retro</span></a><a href="https://ally-community.pages.dev/"><svg class="nav-icon" aria-hidden="true"><use href="./assets/nav-icons.svg#news"></use></svg><span>Comunidad</span></a></nav><span class="model-tag">Z2 EXTREME</span></div></header>
+ <main id="principal" class="wrap port-main"><section id="library">
+ <header class="port-heading"><div><h1>Ports y <em>Recompilaciones</em></h1><p>Proyectos de PC para explorar en tu ROG Xbox Ally X.</p></div></header>
+ <div class="port-controls"><label class="search-field">Buscar en la biblioteca<input id="query" type="search" placeholder="Juego, proyecto, consola o desarrollador…"></label>
