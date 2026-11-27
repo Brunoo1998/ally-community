@@ -252,7 +252,7 @@ async function route(request,env){
     const categories=await all("SELECT c.name,count(*) AS total FROM posts p JOIN categories c ON c.id=p.category WHERE p.status='public' AND c.hidden=0 GROUP BY c.id ORDER BY total DESC LIMIT 5");
     const best=await all("SELECT id,title,score FROM posts WHERE status='public' AND category IN (SELECT id FROM categories WHERE hidden=0) ORDER BY score DESC,id DESC LIMIT 5");
     const mostVisited=await all("SELECT id,title,views FROM posts WHERE status='public' AND views>0 AND category IN (SELECT id FROM categories WHERE hidden=0) ORDER BY views DESC,id DESC LIMIT 5");
-    const response=json({totals,categories,best,mostVisited},200,{'Cache-Control':'public, max-age=60, s-maxage=300'});
+    const response=json({totals,categories,best,mostVisited},200,{'Cache-Control':'public, max-age=60, s-maxage=60'});
     if(globalThis.caches?.default)await caches.default.put(cacheKey,response.clone()).catch(()=>{});
     return response;
   }
