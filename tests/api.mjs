@@ -9,6 +9,7 @@ const dir=mkdtempSync(join(tmpdir(),'ally-community-'));
 const filename=join(dir,'test.sqlite');
 let db=new DatabaseSync(filename);
 db.exec(readFileSync(new URL('../migrations/0001_initial.sql',import.meta.url),'utf8'));
+db.exec(readFileSync(new URL('../migrations/0002_profiles.sql',import.meta.url),'utf8'));
 const env={
   TURNSTILE_SITE_KEY:'test-site-key',TURNSTILE_SECRET:'test-secret',
   RATE_SECRET:'r'.repeat(64),ADMIN_TOKEN:'a'.repeat(64),
@@ -50,9 +51,23 @@ try{
   await req('session',{data:{token:'invalid'},status:403});
   const session=await req('session',{data:{token:'local-test'},status:201});
   assert.match(session.cookie,/Secure; HttpOnly; SameSite=Lax/);
-  const a=session.cookie.split(';')[0];
-  const b=(await req('session',{data:{token:'local-test'},status:201})).cookie.split(';')[0];
+  const anon=session.cookie.split(';')[0];
+  const anonB=(await req('session',{data:{token:'local-test'},status:201})).cookie.split(';')[0];
+  const pa=await req('profile',{cookie:anon,data:{username:'TestGamer'},status:201});
+  const a=pa.cookie.split(';')[0];
+  await req('profile',{cookie:anonB,data:{username:'testgamer'},status:409});
+  const pb=await req('profile',{cookie:anonB,data:{username:'OtherGamer'},status:201});
+  const b=pb.cookie.split(';')[0];
   assert.notEqual(a,b);
+  assert.equal((await req('meta',{cookie:a})).result.profile.username,'TestGamer');
+  assert.equal((await req('meta',{cookie:anon})).result.session,false);
+  await req('profile/claim-admin',{cookie:a,data:{},status:401});
+  await req('profile/claim-admin',{cookie:a,key:env.ADMIN_TOKEN,data:{}});
+  assert.equal((await req('meta',{cookie:a})).result.profile.role,'admin');
+  await req('profile/claim-admin',{cookie:b,key:env.ADMIN_TOKEN,data:{},status:409});
+  const anonC=(await req('session',{data:{token:'local-test'},status:201})).cookie.split(';')[0];
+  const recovery=await req('profile/recover',{cookie:anonC,data:{code:pa.result.recovery}});
+  assert.equal((await req('meta',{cookie:recovery.cookie.split(';')[0]})).result.profile.username,'TestGamer');
   const draft={title:'Ajustes de Cyberpunk',category:4,body:'Prueba de rendimiento <i>literal</i>.',game:'cyberpunk-2077-rog-xbox-ally-x',config:{model:'Xbox ROG Ally X',resolution:'900p'}};
   await req('posts',{data:draft,status:401});
   await req('posts',{cookie:a,data:draft,origin:'https://irrelevant.test',status:403});
@@ -60,7 +75,7 @@ try{
   await req('posts',{cookie:a,data:draft,status:409});
   db.close();db=new DatabaseSync(filename);
   const detail=(await req('posts/'+post,{cookie:a})).result;
-  assert.equal(detail.own,1);assert.equal(JSON.parse(detail.config).resolution,'900p');
+  assert.equal(detail.own,1);assert.equal(detail.username,'TestGamer');assert.equal(detail.role,'admin');assert.equal(JSON.parse(detail.config).resolution,'900p');
   assert.equal((await req('posts?q=cyberpunk')).result.rows[0].id,post);
   assert.equal((await req('posts?game='+draft.game)).result.rows[0].id,post);
   await req('posts/'+post+'/edit',{cookie:b,data:{title:'Otro título',body:'Texto nuevo'},status:404});

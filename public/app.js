@@ -34,8 +34,9 @@ function select(parent,label,name,values){
   for(const [value,text] of values)el('option',text,node).value=value;
   return node;
 }
-async function api(route,data){
-  const response=await fetch('/api/'+route,data===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+async function api(route,data,key){
+  const headers={'Content-Type':'application/json'};if(key)headers.Authorization='Bearer '+key;
+  const response=await fetch('/api/'+route,data===undefined?{}:{method:'POST',headers,body:JSON.stringify(data)});
   const result=await response.json().catch(()=>({error:'Servicio temporalmente no disponible.'}));
   if(!response.ok)throw Error(result.error||'No se pudo completar la operación.');
   return result;
@@ -70,11 +71,11 @@ function renderText(parent,text){
   }
   return box;
 }
-async function session(resume){
+async function verifySession(resume){
   if(meta.session)return resume();
   if(!meta.siteKey)throw Error('La participación estará disponible cuando se configure la verificación de seguridad.');
-  open('Verifica tu sesión');
-  el('p','Puedes participar sin registrarte. Si borras tus cookies o cambias de navegador, puedes perder el acceso a tus publicaciones.',content);
+  open('Verificación de seguridad');
+  el('p','Protegemos la comunidad del spam. No necesitamos tu correo ni contraseña.',content);
   const challenge=el('div',undefined,content);
   if(!turnstileScript)turnstileScript=new Promise((resolve,reject)=>{
     const script=el('script',undefined,document.head);script.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
@@ -87,6 +88,60 @@ async function session(resume){
     catch(error){if(challenge.isConnected)window.turnstile.reset(widget);throw error;}
   })});
   modal.addEventListener('close',()=>window.turnstile.remove(widget),{once:true});
+}
+function updateProfile(){
+  const p=meta.profile, node=$('#profile');
+  node.textContent=p?'@'+p.username:'Elegir nombre';
+  node.classList.toggle('admin-profile',p?.role==='admin');
+  node.setAttribute('aria-label',p?'Mi perfil: '+p.username:'Elegir nombre de usuario');
+  $('#moderation').hidden=p?.role!=='admin';
+}
+async function refreshProfile(){meta=await api('meta');updateProfile();}
+function recoveryView(code,resume){
+  open('Guarda tu código de recuperación');
+  el('p','Este código permite recuperar tu nombre y tus aportaciones en otro navegador o dispositivo. Guárdalo en privado: quien lo tenga podrá acceder a tu perfil.',content);
+  const field=el('textarea',undefined,content);field.value=code;field.readOnly=true;field.rows=3;field.setAttribute('aria-label','Código de recuperación');
+  button(content,'Copiar código',async()=>{if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(code);else{field.focus();field.select();throw Error('Copia el código seleccionado manualmente.');}$('#modal-status').textContent='Código copiado.';});
+  button(content,'He guardado el código',async()=>{modal.close();await resume?.();}).className='primary';
+}
+function chooseProfile(resume=()=>load()){
+  open('¡Bienvenido a Ally Community!');
+  el('p','Soy Ally. ¿Cómo quieres que te llamemos? Elige un nombre único; no necesitas correo ni contraseña.',content);
+  const f=el('form',undefined,content);f.className='stack';
+  const name=input(f,'Nombre de usuario','username',{max:20,required:true});name.minLength=3;name.pattern='[A-Za-z0-9_]{3,20}';name.autocomplete='username';
+  el('small','De 3 a 20 letras, números o guiones bajos. El nombre será público.',f);
+  const submit=el('button','Reservar mi nombre',f);submit.className='primary';
+  f.onsubmit=e=>{e.preventDefault();if(submit.disabled)return;submit.disabled=true;
+    void attempt(async()=>{try{const username=name.value;await verifySession(async()=>{const result=await api('profile',{username});await refreshProfile();recoveryView(result.recovery,resume);});}finally{submit.disabled=false;}});};
+  button(content,'Ya tengo un código de recuperación',()=>recoverProfile(resume));
+  button(content,'Solo quiero leer',()=>modal.close());
+}
+function recoverProfile(resume){
+  open('Recupera tu perfil');
+  const f=el('form',undefined,content);f.className='stack';
+  const code=input(f,'Código de recuperación','code',{max:64,required:true});code.type='password';code.autocomplete='off';
+  const submit=el('button','Recuperar perfil',f);submit.className='primary';
+  f.onsubmit=e=>{e.preventDefault();if(submit.disabled)return;submit.disabled=true;const value=code.value.trim();void attempt(async()=>{try{await verifySession(async()=>{await api('profile/recover',{code:value});await refreshProfile();modal.close();await resume?.();});}finally{submit.disabled=false;}});};
+}
+async function session(resume){if(meta.profile)return resume();chooseProfile(resume);}
+async function showProfile(){
+  if(!meta.profile){chooseProfile();return;}
+  const data=await api('profile');
+  open('Mi perfil');
+  el('h3','@'+data.profile.username+(data.profile.role==='admin'?' · Administrador':''),content);
+  el('p','Miembro desde '+new Date(data.profile.created*1000).toLocaleDateString('es-ES'),content);
+  el('p',data.counts.posts+' publicaciones · '+data.counts.comments+' comentarios · '+data.counts.votes+' votos',content);
+  button(content,'Generar nuevo código de recuperación',async()=>{if(!confirm('El código anterior dejará de funcionar. ¿Continuar?'))return;const r=await api('profile/rotate',{});recoveryView(r.recovery);});
+  if(data.profile.role==='admin')link(content,'Abrir panel de moderación','/admin.html');
+  else button(content,'Identificarme como administrador',()=>{
+    open('Acceso reservado al administrador');
+    const f=el('form',undefined,content);f.className='stack';
+    const key=input(f,'Clave privada de administración','key',{required:true});key.type='password';key.autocomplete='off';
+    el('small','Introduce tu ADMIN_TOKEN de Cloudflare. No se guarda en el navegador.',f);
+    const submit=el('button','Vincular mi perfil de administrador',f);submit.className='primary';
+    f.onsubmit=e=>{e.preventDefault();if(submit.disabled)return;submit.disabled=true;void attempt(async()=>{try{await api('profile/claim-admin',{},key.value);key.value='';await refreshProfile();await showProfile();}finally{submit.disabled=false;}});};
+  });
+  button(content,'Cerrar sesión',async()=>{if(!confirm('Asegúrate de tener guardado el código de recuperación. ¿Cerrar sesión?'))return;await api('profile/logout',{});location.reload();});
 }
 function editor({post,debate=false,shared=false,comment,replyTo}={}){
   open(comment?'Editar comentario':replyTo?'Responder':post?'Editar publicación':shared?'Compartir mi configuración':debate?'Iniciar debate':'Crear publicación');
@@ -146,7 +201,7 @@ function votes(parent,item,kind){
   function update(){up.setAttribute('aria-pressed',String(item.vote===1));down.setAttribute('aria-pressed',String(item.vote===-1));}
   update();
 }
-function describe(parent,item){el('small',[item.pinned?'Fijada':null,item.categoryName,'Usuario anónimo'+(item.author?' · Autor original':''),new Date(item.created*1000).toLocaleDateString('es-ES')].filter(Boolean).join(' · '),parent);}
+function describe(parent,item){const row=el('small',undefined,parent);row.textContent=[item.pinned?'Fijada':null,item.categoryName,item.username?'@'+item.username:'Usuario anónimo',item.author?'Autor original':null,new Date(item.created*1000).toLocaleDateString('es-ES')].filter(Boolean).join(' · ');if(item.role==='admin'){const badge=el('span','ADMIN',row);badge.className='admin-badge';}}
 function actions(parent,item,kind){
   const box=el('div',undefined,parent);box.className='actions';
   button(box,'Denunciar',()=>session(()=>{
@@ -161,7 +216,7 @@ function actions(parent,item,kind){
     };
   }));
   if(item.own){
-    button(box,'Editar',()=>editor(kind==='post'?{post:item}:{comment:item}));
+    button(box,'Editar',()=>session(()=>editor(kind==='post'?{post:item}:{comment:item})));
     button(box,'Eliminar',()=>{
       open('Eliminar contenido');
       el('p','El contenido quedará retirado. Las respuestas de un comentario pueden seguir visibles.',content);
@@ -260,6 +315,7 @@ async function load(){
 }
 async function init(){
   meta=await api('meta');
+  updateProfile();$('#profile').onclick=()=>attempt(showProfile);
   for(const c of meta.categories)el('option',c.name,form.elements.category).value=c.id;
   $('#create').onclick=()=>attempt(()=>session(()=>editor()));
   $('#notices').onclick=()=>attempt(async()=>{
@@ -285,5 +341,6 @@ async function init(){
     if(params.get('share')==='1')button(box,'Abrir borrador de configuración',()=>session(()=>editor({shared:true})));
   }
   await load();
+  if(!meta.profile&&!sessionStorage.getItem('ally-profile-prompted')){try{sessionStorage.setItem('ally-profile-prompted','1');}catch{}chooseProfile();}
 }
 void attempt(init);

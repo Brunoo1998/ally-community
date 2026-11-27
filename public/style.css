@@ -104,3 +104,5 @@ body:has(dialog[open]) .ally-pet{display:none}
  @keyframes pet-racer{0%,15%{left:29%}45%,65%{left:58%}100%{left:31%}}
  @keyframes pet-opponent{from{top:-35%}to{top:105%}}
 }
+
+.admin-badge{display:inline-block;margin-inline-start:.5rem;padding:.1rem .35rem;border:1px solid #a9ec6f;border-radius:.3rem;color:#b1f874;font-size:.7rem;font-weight:800;vertical-align:middle}.admin-profile{border-color:#b1f874;color:#b1f874;font-weight:700}#profile{max-width:100%;overflow-wrap:anywhere}#moderation{color:var(--green)}

@@ -59,7 +59,7 @@ export async function onRequest({request,env}){
   try{return await route(request,env);}
   catch(e){
     if(e.status)return json({error:e.message},e.status);
-    if(/UNIQUE constraint/i.test(String(e)))return json({error:'Ya existe un registro equivalente. Actualiza la página.'},409);
+    if(/UNIQUE constraint/i.test(String(e)))return json({error:'Ese nombre o registro ya está reservado. Elige otro o actualiza la página.'},409);
     return json({error:'Servicio temporalmente no disponible. Inténtalo más tarde.'},503);
   }
 }
@@ -77,8 +77,12 @@ async function route(request,env){
   const run=(s,...args)=>sql(s,...args).run();
   const timestamp=now();
   const cookie=request.headers.get('Cookie')?.match(/(?:^|;\s*)__Host-ally_session=([a-f0-9]{64})(?=;|$)/)?.[1];
-  const owner=cookie?await digest(cookie):null;
-  const who=owner?await first('SELECT id,blocked_until FROM sessions WHERE id=? AND expires>?',owner,timestamp):null;
+  const credential=cookie?await digest(cookie):null;
+  const device=credential?await first('SELECT owner,expires FROM profile_devices WHERE id=?',credential):null;
+  const owner=device?(device.expires>timestamp?device.owner:null):credential;
+  const who=owner?await first('SELECT s.id,s.blocked_until,s.expires,p.username,p.created,p.role FROM sessions s LEFT JOIN profiles p ON p.owner=s.id WHERE s.id=? AND (?=1 OR (s.expires>? AND p.owner IS NULL))',owner,device?1:0,timestamp):null;
+  const sessionCookie=key=>'__Host-ally_session='+key+'; Path=/; Max-Age=15552000; Secure; HttpOnly; SameSite=Lax';
+  const publicProfile=who=>who?.username?{username:who.username,created:who.created,role:who.role}:null;
   const throttle=async(key,max,window)=>{
     const expires=(Math.floor(timestamp/window)+1)*window;
     const row=await first('INSERT INTO rate VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET hits=hits+1 WHERE hits<? RETURNING hits',key+':'+expires,expires,max);
@@ -129,8 +133,62 @@ async function route(request,env){
     return json({ok:true});
   }
   if(resource==='meta'&&method==='GET'){
+    let headers={};
+    if(who&&device&&device.expires<timestamp+12960000){
+      await run('UPDATE profile_devices SET expires=? WHERE id=? AND expires>?',timestamp+15552000,credential,timestamp);
+      headers={'Set-Cookie':sessionCookie(cookie)};
+    }
     return json({categories:await all('SELECT id,name FROM categories WHERE hidden=0 ORDER BY position,id'),
-      session:!!who,siteKey:env.TURNSTILE_SITE_KEY||null,settings:await first('SELECT readonly,stop_posts,review FROM settings WHERE id=1')});
+      session:!!who,profile:publicProfile(who),siteKey:env.TURNSTILE_SITE_KEY||null,settings:await first('SELECT readonly,stop_posts,review FROM settings WHERE id=1')},200,headers);
+  }
+  if(resource==='profile'&&method==='GET'){
+    if(!who?.username)error('Crea o recupera tu perfil.',401);
+    const counts=await first("SELECT (SELECT count(*) FROM posts WHERE owner=? AND status IN ('public','pending')) AS posts,(SELECT count(*) FROM comments WHERE owner=? AND status IN ('public','pending')) AS comments,(SELECT count(*) FROM votes WHERE owner=?) AS votes",owner,owner,owner);
+    return json({profile:publicProfile(who),counts});
+  }
+  if(resource==='profile'&&method==='POST'){
+    if(!who)error('Verifica tu sesión primero.',401);
+    if(who.blocked_until>timestamp)error('Esta sesión está restringida.',403);
+    const data=await body(request);
+    if(id==='recover'){
+      if(who.username)error('Cierra tu perfil antes de recuperar otro.',409);
+      await throttle('recover:'+owner,6,3600);
+      const code=field(data.code,64,64).toLowerCase();
+      if(!/^[a-f0-9]{64}$/.test(code))error('Código de recuperación incorrecto.',400);
+      const profile=await first('SELECT owner FROM profiles WHERE recovery_hash=?',await digest(code));
+      if(!profile)error('Código de recuperación incorrecto.',400);
+      const key=token();
+      await run('INSERT INTO profile_devices(id,owner,expires) VALUES(?,?,?)',await digest(key),profile.owner,timestamp+15552000);
+      return json({ok:true},200,{'Set-Cookie':sessionCookie(key)});
+    }
+    if(id==='logout'){
+      if(device)await run('DELETE FROM profile_devices WHERE id=?',credential);
+      return json({ok:true},200,{'Set-Cookie':'__Host-ally_session=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax'});
+    }
+    if(id==='rotate'){
+      if(!who.username)error('No tienes perfil.',401);
+      await throttle('rotate:'+owner,3,3600);
+      const code=token();
+      await run('UPDATE profiles SET recovery_hash=? WHERE owner=?',await digest(code),owner);
+      return json({recovery:code});
+    }
+    if(id==='claim-admin'){
+      if(!who.username)error('Crea tu perfil primero.',400);
+      await admin(request,env);
+      if(await first("SELECT owner FROM profiles WHERE role='admin' AND owner<>?",owner))error('Ya existe un perfil administrador.',409);
+      await run("UPDATE profiles SET role='admin' WHERE owner=?",owner);
+      return json({ok:true});
+    }
+    if(id)error('Ruta no encontrada.',404);
+    if(who.username)error('Ya tienes un nombre reservado.',409);
+    await throttle('profile:'+owner,8,3600);
+    const username=field(data.username,20,3);
+    if(!/^[a-zA-Z0-9_]{3,20}$/.test(username))error('Usa de 3 a 20 letras, números o guiones bajos.');
+    if(/^(admin|administrador|moderador|moderation|moderator|staff|ally|allylab|allycommunity|soporte|support|official|oficial)([0-9_]*$)/i.test(username))error('Nombre reservado. Elige otro.');
+    const code=token(),key=token();
+    const recoveryHash=await digest(code),deviceHash=await digest(key);
+    await db.batch([sql('INSERT INTO profiles(owner,username,recovery_hash,created) VALUES(?,?,?,?)',owner,username,recoveryHash,timestamp),sql('INSERT INTO profile_devices(id,owner,expires) VALUES(?,?,?)',deviceHash,owner,timestamp+15552000)]);
+    return json({profile:{username,created:timestamp,role:'member'},recovery:code},201,{'Set-Cookie':sessionCookie(key)});
   }
   if(resource==='session'&&method==='POST'){
     if(who)return json({ok:true});
@@ -163,7 +221,7 @@ async function route(request,env){
     return response;
   }
   if(resource==='posts'&&method==='GET'){
-    const projection=`p.id,p.category,c.name AS categoryName,p.title,p.game,p.tags,p.config,p.debate,p.created,p.score,p.replies,p.pinned,p.closed,p.owner=? AS own,
+    const projection=`p.id,p.category,c.name AS categoryName,p.title,p.game,p.tags,p.config,p.debate,p.created,p.score,p.replies,p.pinned,p.closed,p.owner=? AS own,(SELECT username FROM profiles WHERE owner=p.owner) AS username,(SELECT role FROM profiles WHERE owner=p.owner) AS role,
       coalesce((SELECT value FROM votes WHERE owner=? AND kind='post' AND target=p.id),0) AS vote`;
     if(id){
       const item=await first('SELECT '+projection+',p.body,p.status FROM posts p JOIN categories c ON c.id=p.category WHERE p.id=? AND c.hidden=0 AND (p.status=\'public\' OR (p.owner=? AND p.status=\'pending\'))',who?.id??null,who?.id??null,positive(id),who?.id??null);
@@ -193,7 +251,7 @@ async function route(request,env){
     const sort=query.get('sort')==='popular'?'c.score':'c.id';
     const cursor=(query.get('after')||'').match(/^(-?\d{1,15}):(\d{1,15})$/);
     const rows=await all(`SELECT c.id,c.post,c.parent,c.depth,c.created,c.status,CASE WHEN c.status='public' THEN c.body ELSE '' END AS body,
-      c.score,c.owner=? AS own,c.owner=p.owner AS author,${sort} AS ranking,
+      c.score,c.owner=? AS own,c.owner=p.owner AS author,(SELECT username FROM profiles WHERE owner=c.owner) AS username,(SELECT role FROM profiles WHERE owner=c.owner) AS role,${sort} AS ranking,
       EXISTS(SELECT 1 FROM comments child WHERE child.parent=c.id AND child.status IN ('public','deleted')) AS children,
       coalesce((SELECT value FROM votes WHERE owner=? AND kind='comment' AND target=c.id),0) AS vote
       FROM comments c JOIN posts p ON p.id=c.post JOIN categories k ON k.id=p.category
@@ -205,6 +263,7 @@ async function route(request,env){
   if(method!=='POST')error('Ruta no encontrada.',404);
   if(!who)error('Verifica la sesión anónima para participar.',401);
   if(who.blocked_until>timestamp)error('Esta sesión está restringida.',403);
+  if(!who.username)error('Elige tu nombre de usuario para participar.',403);
   const data=await body(request), settings=await first('SELECT * FROM settings WHERE id=1');
   if(!settings||settings.readonly)error('La comunidad está en modo de solo lectura.',403);
   const target=positive(id);
