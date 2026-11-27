@@ -18,6 +18,7 @@ db.exec(readFileSync(new URL('../migrations/0007_photos.sql',import.meta.url),'u
 db.exec(readFileSync(new URL('../migrations/0008_admin_notifications.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0009_ally_bot.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0010_presence.sql',import.meta.url),'utf8'));
+db.exec(readFileSync(new URL('../migrations/0011_friends.sql',import.meta.url),'utf8'));
 const env={
   TURNSTILE_SITE_KEY:'test-site-key',TURNSTILE_SECRET:'test-secret',
   RATE_SECRET:'r'.repeat(64),ADMIN_TOKEN:'a'.repeat(64),
@@ -296,6 +297,47 @@ try{
   await req('presence/preference',{cookie:a,data:{enabled:false}});
   assert.equal(db.prepare('SELECT count(*) AS n FROM profile_presence').get().n,0);
   assert.deepEqual((await req('presence',{cookie:a,data:{names:['TestGamer'],heartbeat:true}})).result.online,[]);
+  // Private social access: only a confirmed pair may read or send.
+  await req('friends',{status:401});
+  await req('friends/request',{cookie:a,data:{username:'Ally'},status:404});
+  await req('friends/request',{cookie:a,data:{username:'OtherGamer'},status:201});
+  const incoming=(await req('friends',{cookie:b})).result.rows[0];
+  assert.equal(incoming.username,'TestGamer');assert.equal(incoming.outgoing,false);assert.equal(incoming.accepted,false);
+  assert.equal((await req('friends/summary',{cookie:b})).result.requests,1);
+  await req('chat/'+incoming.id,{cookie:a,status:404});
+  await req('friends/accept',{cookie:a,data:{username:'OtherGamer'},status:404});
+  await req('friends/accept',{cookie:b,data:{username:'TestGamer'}});
+  await req('chat/'+incoming.id,{status:401});
+  await req('chat/'+incoming.id+'/send',{cookie:a,origin:'https://third-party.test',data:{body:'Hola'},status:403});
+  const sent=(await req('chat/'+incoming.id+'/send',{cookie:a,data:{body:'Hola, amigo'},status:201})).result.id;
+  assert.equal((await req('friends/summary',{cookie:b})).result.unread,1);
+  const received=(await req('chat/'+incoming.id,{cookie:b})).result.rows[0];
+  assert.equal(received.body,'Hola, amigo');assert.equal(received.own,0);
+  assert.ok(!('sender' in received));
+  await req('chat/'+incoming.id+'/read',{cookie:b,data:{through:sent}});
+  assert.equal((await req('friends/summary',{cookie:b})).result.unread,0);
+  assert.equal((await req('chat/'+incoming.id,{cookie:a})).result.rows[0].read,1);
+  await req('friends/privacy',{cookie:a,data:{enabled:true},status:400});
+  await req('presence/preference',{cookie:a,data:{enabled:true}});
+  await req('friends/privacy',{cookie:a,data:{enabled:true}});
+  await req('presence',{cookie:a,data:{names:[],heartbeat:true}});
+  assert.equal((await req('friends',{cookie:b})).result.rows[0].online,true);
+  db.prepare('UPDATE profile_presence SET expires=unixepoch()-1').run();
+  db.prepare('UPDATE friend_activity SET last_active=unixepoch()-600').run();
+  assert.equal((await req('friends',{cookie:b})).result.rows[0].lastSeen,'Hace 10 min');
+  await req('friends/privacy',{cookie:a,data:{enabled:false}});
+  assert.equal((await req('friends',{cookie:b})).result.rows[0].lastSeen,null);
+  db.prepare('UPDATE private_messages SET created=unixepoch()-2592001').run();
+  assert.deepEqual((await req('chat/'+incoming.id,{cookie:b})).result.rows,[]);
+  await req('friends/block',{cookie:b,data:{username:'TestGamer'}});
+  await req('chat/'+incoming.id,{cookie:a,status:404});
+  await req('chat/'+incoming.id+'/send',{cookie:a,data:{body:'No'},status:404});
+  assert.equal(db.prepare('SELECT count(*) AS n FROM private_messages').get().n,0);
+  await req('friends/request',{cookie:a,data:{username:'OtherGamer'},status:404});
+  await req('friends/unblock',{cookie:b,data:{username:'TestGamer'}});
+  await req('friends/request',{cookie:a,data:{username:'OtherGamer'},status:201});
+  await req('friends/decline',{cookie:b,data:{username:'TestGamer'}});
+  assert.deepEqual((await req('friends',{cookie:b})).result.rows,[]);
   await req('posts',{overrides:{DB:null},status:503});
   console.log('SQLite persistente, dos sesiones, debate, configuración, comentarios, votos, denuncias, moderación y fallos: OK');
 }finally{

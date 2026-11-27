@@ -181,6 +181,126 @@ function showPresenceChoice(){
   button(controls,'Mostrar mi estado',()=>changePresence(true)).className='primary';
   button(controls,'Prefiero ocultarlo',()=>changePresence(false));
 }
+let friendsView=null,chatView=null,socialBusy=false;
+function socialBadge(total){
+  const node=$('#friends'),count=Number(total)||0;
+  let badge=node.querySelector('.social-unread');
+  if(!count){badge?.remove();node.setAttribute('aria-label','Amigos y chat privado');return;}
+  if(!badge){badge=el('span',undefined,node);badge.className='social-unread';badge.setAttribute('aria-hidden','true');}
+  badge.textContent=count>99?'99+':String(count);node.setAttribute('aria-label','Amigos: '+count+' avisos sin leer');
+}
+async function refreshSocialBadge(){
+  if(!meta?.profile||document.hidden||socialBusy)return;
+  socialBusy=true;try{const d=await api('friends/summary');socialBadge(d.requests+d.unread);}catch{}finally{socialBusy=false;}
+}
+function activeView(view){return modal.open&&view?.isConnected;}
+function friendName(parent,username){
+  const node=el('strong','@'+username,parent);
+  if(!meta?.profile||username==='Ally'||username.toLowerCase()===meta.profile.username.toLowerCase())return node;
+  const btn=button(parent,'Añadir amigo',()=>openFriends(username));btn.className='friend-inline';return node;
+}
+async function openFriends(prefill=''){
+  if(!meta?.profile){chooseProfile(()=>openFriends(prefill));return;}
+  open('Amigos y mensajes');
+  chatView=null;
+  const view=el('section',undefined,content);friendsView=view;view.className='friends-view';
+  const add=el('form',undefined,view);add.className='friend-add';
+  const username=input(add,'Añadir por nombre de usuario','username',{required:true,max:20,value:prefill});
+  username.placeholder='Nombre de usuario';username.pattern='[A-Za-z0-9_]{3,20}';username.minLength=3;
+  const submit=el('button','Enviar solicitud',add);submit.className='primary';
+  const info=el('p','Solo puedes chatear con amigos que hayan aceptado tu solicitud. No compartas contraseñas ni datos privados.',view);info.className='social-hint';
+  const lists=el('div',undefined,view);
+  add.onsubmit=e=>{e.preventDefault();if(submit.disabled)return;submit.disabled=true;void attempt(async()=>{try{await api('friends/request',{username:username.value.trim()});username.value='';await reload();}finally{submit.disabled=false;}});};
+  async function act(action,name,warning){
+    if(warning&&!confirm(warning))return;
+    await api('friends/'+action,{username:name});await reload();
+  }
+  async function reload(){
+    const data=await api('friends');if(!activeView(view))return;
+    lists.replaceChildren();
+    socialBadge(data.rows.filter(r=>!r.accepted&&!r.outgoing).length+data.rows.reduce((n,r)=>n+r.unread,0));
+    const groups=[['Solicitudes recibidas',data.rows.filter(r=>!r.accepted&&!r.outgoing)],['Solicitudes enviadas',data.rows.filter(r=>!r.accepted&&r.outgoing)],['Mis amigos',data.rows.filter(r=>r.accepted)]];
+    for(const [title,rows] of groups){
+      const section=el('section',undefined,lists);section.className='friend-group';
+      el('h3',title+' · '+rows.length,section);
+      if(!rows.length)el('p','Nada por aquí todavía.',section).className='social-hint';
+      for(const row of rows){
+        const card=el('article',undefined,section);card.className='friend-row';
+        const copy=el('div',undefined,card);
+        el('strong','@'+row.username,copy);
+        if(row.accepted){
+          const state=el('small',row.online?'En línea':row.lastSeen||'Estado no disponible',copy);state.className='friend-state'+(row.online?' online':'');
+        }else el('small',row.outgoing?'Pendiente de aceptación':'Quiere añadirte como amigo',copy);
+        const controls=el('div',undefined,card);controls.className='friend-actions';
+        if(row.accepted){
+          button(controls,row.unread?'Chat · '+row.unread+' nuevos':'Abrir chat',()=>openChat(row.id,row.username)).className='primary';
+          button(controls,'Eliminar amigo',()=>act('remove',row.username,'¿Eliminar esta amistad? Se borrará el chat para ambos.'));
+        }else{
+          if(!row.outgoing)button(controls,'Aceptar',()=>act('accept',row.username)).className='primary';
+          button(controls,row.outgoing?'Cancelar':'Rechazar',()=>act('decline',row.username));
+        }
+        if(!row.outgoing)button(controls,'Bloquear',()=>act('block',row.username,'¿Bloquear a este usuario? Se eliminará la amistad y el chat para ambos.')).dataset.variant='danger';
+      }
+    }
+    const privacy=el('details',undefined,lists);privacy.className='friend-group';el('summary','Privacidad y bloqueos',privacy);
+    const text=el('p',data.activitySharing?'Tus amigos pueden ver tu actividad aproximada si tienes visible el estado en línea.':'Tus amigos no ven cuánto tiempo llevas inactivo.',privacy);
+    button(privacy,data.activitySharing?'Ocultar última actividad':'Compartir última actividad con amigos',async()=>{await api('friends/privacy',{enabled:!data.activitySharing});await reload();});
+    el('small','La última actividad es opcional, aproximada y solo visible para amigos aceptados. Activa primero el estado en línea en Mi perfil.',privacy);
+    for(const name of data.blocked){const row=el('div',undefined,privacy);row.className='friend-row';el('strong','@'+name,row);button(row,'Desbloquear',()=>act('unblock',name));}
+  }
+  const refresh=button(view,'Actualizar lista',reload);refresh.className='friend-refresh';
+  await reload();
+  view.refreshFriends=reload;
+}
+async function openChat(id,username){
+  open('Chat con @'+username);friendsView=null;
+  const view=el('section',undefined,content);chatView=view;view.className='private-chat';
+  const tools=el('div',undefined,view);tools.className='chat-tools';
+  button(tools,'← Amigos',()=>openFriends());
+  button(tools,'Bloquear',async()=>{if(!confirm('¿Bloquear a este usuario? Se borrará la amistad y el chat para ambos.'))return;await api('friends/block',{username});await openFriends();}).dataset.variant='danger';
+  link(tools,'Denunciar abuso','/contacto.html').className='ui-button quiet';
+  el('small','Chat privado entre amigos. Los mensajes caducan a los 30 días. No tiene cifrado de extremo a extremo.',view).className='social-hint';
+  const older=button(view,'Cargar mensajes anteriores',()=>fetchRows('older'));older.hidden=true;
+  const log=el('div',undefined,view);log.className='chat-log';log.setAttribute('role','log');log.setAttribute('aria-label','Mensajes de la conversación');log.tabIndex=0;
+  const f=el('form',undefined,view);f.className='chat-compose';
+  const message=input(f,'Mensaje','body',{max:2000,required:true,multiline:true});message.rows=2;message.placeholder='Escribe un mensaje…';
+  const send=el('button','Enviar',f);send.className='primary';send.disabled=true;
+  const hint=el('small','',view);hint.className='social-hint';
+  let low=0,high=0,busy=false;
+  const seen=new Set();
+  function makeMessage(row){
+    const bubble=el('article',undefined);bubble.className='chat-message'+(row.own?' own':'');
+    el('div',row.body,bubble).className='chat-text';
+    const footer=el('small',new Date(row.created*1000).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'})+(row.own?(row.read?' · Leído':' · Enviado'):''),bubble);
+    footer.className='chat-time';return bubble;
+  }
+  async function fetchRows(mode='new'){
+    if(!activeView(view)||document.hidden||busy)return;
+    busy=true;
+    try{
+      const data=await api('chat/'+id+(mode==='older'&&low?'?before='+low:mode==='new'&&high?'?after='+high:''));
+      if(!activeView(view))return;
+      const atBottom=log.scrollHeight-log.scrollTop-log.clientHeight<50,prior=log.scrollHeight;
+      if(mode==='older'||!high)older.hidden=!data.more;
+      const fragment=document.createDocumentFragment();
+      for(const row of data.rows){
+        if(seen.has(row.id))continue;
+        seen.add(row.id);low=low?Math.min(low,row.id):row.id;high=Math.max(high,row.id);
+        fragment.append(makeMessage(row));
+      }
+      if(mode==='older'){log.prepend(fragment);log.scrollTop+=log.scrollHeight-prior;}
+      else{log.append(fragment);if(atBottom||mode==='initial')log.scrollTop=log.scrollHeight;}
+      send.disabled=!data.canSend;hint.textContent=data.canSend?'':'Este usuario no está disponible para recibir mensajes.';
+      if(high&&mode!=='older'&&data.rows.some(r=>!r.own&&!r.read)){await api('chat/'+id+'/read',{through:high});void refreshSocialBadge();}
+      if(mode==='new'&&data.more&&activeView(view))setTimeout(()=>void fetchRows(),250);
+    }catch(error){if(activeView(view)){hint.textContent=error.message;send.disabled=true;}}
+    finally{busy=false;}
+  }
+  f.onsubmit=e=>{e.preventDefault();if(send.disabled)return;send.disabled=true;void attempt(async()=>{try{await api('chat/'+id+'/send',{body:message.value});message.value='';await fetchRows();}finally{if(activeView(view)&&!hint.textContent)send.disabled=false;}});};
+  message.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();if(!send.disabled)f.requestSubmit();}});
+  view.refreshChat=fetchRows;await fetchRows('initial');
+}
+
 function updateProfile(){
   const p=meta.profile, node=$('#profile');
   node.textContent=p?'@'+p.username:'Elegir nombre';
@@ -190,6 +310,7 @@ function updateProfile(){
   $('#moderation').hidden=p?.role!=='admin';
   if(p?.role==='admin')void refreshAdminNoticeCount();else setAdminNoticeCount(0);
   if(p)presenceBadge(node,p.username);
+  $('#friends').hidden=!p;if(p)void refreshSocialBadge();else socialBadge(0);
   presenceEpoch++;showPresenceChoice();schedulePresence();
 }
 async function refreshProfile(){meta=await api('meta');updateProfile();}
@@ -463,12 +584,12 @@ function describe(parent,item){
   const fields=[
     item.pinned?'Fijada':null,
     item.categoryName,
-    item.username?'@'+item.username:'Usuario anónimo',
     item.author?'Autor original':null
   ].filter(Boolean);
   if(item.username==='Ally'&&item.role==='member'){const avatar=el('img',undefined,row);avatar.className='ally-bot-avatar';avatar.src='/ally.webp';avatar.alt='';}
   if(fields.length)row.append(document.createTextNode(fields.join(' · ')+' · '));
-  presenceBadge(row,item.username);
+  if(item.username)friendName(row,item.username);else row.append(document.createTextNode('Usuario anónimo'));
+  presenceBadge(row,item.username);row.append(document.createTextNode(' · '));
   botIdentity(row,item);
   const created=new Date(item.created*1000);
   const date=created.toLocaleDateString('es-ES');
@@ -533,7 +654,7 @@ function renderRecentComments(parent,post){
     const block=el('div',undefined,section);block.className='recent-comment';
     const meta=el('div',undefined,block);meta.className='recent-comment-meta';
     if(comment.username==='Ally'&&comment.role==='member'){const avatar=el('img',undefined,meta);avatar.className='ally-bot-avatar';avatar.src='/ally.webp';avatar.alt='';}
-    const author=el('strong',comment.username?'@'+comment.username:'Usuario anónimo',meta);
+    if(comment.username)friendName(meta,comment.username);else el('strong','Usuario anónimo',meta);
     presenceBadge(meta,comment.username);
     botIdentity(meta,comment);
     if(comment.role==='admin'){
@@ -733,6 +854,10 @@ async function init(){
   if(['recent','popular','trend','comments','views'].includes(params.get('sort')))form.elements.sort.value=params.get('sort');
   $('#create').onclick=()=>attempt(()=>session(()=>editor()));
   $('#notices').onclick=()=>attempt(showNoticeInbox);
+  $('#friends').onclick=()=>attempt(()=>openFriends());
+  setInterval(()=>{if(!document.hidden){if(activeView(chatView))void chatView.refreshChat?.();else if(activeView(friendsView))void friendsView.refreshFriends?.().catch(()=>{});}},15000);
+  setInterval(()=>void refreshSocialBadge(),60000);
+  window.addEventListener('focus',()=>void refreshSocialBadge());
   window.addEventListener('focus',()=>void refreshAdminNoticeCount());
   document.addEventListener('visibilitychange',()=>void refreshAdminNoticeCount());
   setInterval(()=>{if(meta?.profile?.role==='admin'&&!document.hidden)void refreshAdminNoticeCount();},60000);

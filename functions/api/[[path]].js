@@ -87,6 +87,8 @@ export async function onRequest({request,env}){
   try{return await route(request,env);}
   catch(e){
     if(e.status)return json({error:e.message},e.status);
+    if(/friend_unavailable/.test(String(e)))return json({error:'Esta relación no está disponible.'},409);
+    if(/chat_full/.test(String(e)))return json({error:'Este chat ha alcanzado su límite de mensajes activos. Inténtalo más adelante.'},429);
     if(/photo_budget_exceeded/.test(String(e)))return json({error:'Se ha alcanzado el límite de almacenamiento de imágenes. Puedes publicar sin fotos.'},507);
     if(/UNIQUE constraint/i.test(String(e)))return json({error:'Ese nombre o registro ya está reservado. Elige otro o actualiza la página.'},409);
     return json({error:'Servicio temporalmente no disponible. Inténtalo más tarde.'},503);
@@ -214,12 +216,107 @@ async function route(request,env){
     const current=await first('SELECT views FROM posts WHERE id=?',post);
     return json({views:current.views},200,headers);
   }
+  if(resource==='friends'||resource==='chat'){
+    if(!who?.username||who.username==='Ally')error('Accede a tu perfil.',401);
+    if(who.blocked_until>timestamp)error('Esta sesión está restringida.',403);
+    const cutoff=timestamp-2592000;
+    async function cleanSocial(){
+      await db.batch([sql('DELETE FROM private_messages WHERE id IN (SELECT id FROM private_messages WHERE created<? LIMIT 200)',cutoff),sql('DELETE FROM friend_activity WHERE rowid IN (SELECT rowid FROM friend_activity WHERE last_active<? LIMIT 100)',cutoff),sql('DELETE FROM friend_links WHERE id IN (SELECT id FROM friend_links WHERE accepted=0 AND created<? LIMIT 100)',cutoff)]);
+    }
+    const related=(target)=>first('SELECT id,a,b,requested_by,accepted FROM friend_links WHERE a=? AND b=?',...[owner,target].sort());
+    const participant=async username=>{
+      if(typeof username!=='string'||!/^[A-Za-z0-9_]{3,20}$/.test(username))error('Nombre no válido.');
+      const person=await first("SELECT p.owner,p.username,s.blocked_until FROM profiles p JOIN sessions s ON s.id=p.owner WHERE p.username=? COLLATE NOCASE AND p.username<>'Ally' COLLATE NOCASE AND p.owner<>?",username,owner);
+      if(!person)error('Usuario no disponible.',404);
+      return person;
+    };
+    if(resource==='friends'){
+      if(method==='GET'&&!action){
+        if(id==='summary'){
+          const row=await first('SELECT (SELECT count(*) FROM friend_links WHERE accepted=0 AND created>=? AND requested_by<>? AND (a=? OR b=?)) AS requests,(SELECT count(*) FROM private_messages m JOIN friend_links f ON f.id=m.friendship WHERE f.accepted=1 AND (f.a=? OR f.b=?) AND m.sender<>? AND m.read_at IS NULL AND m.created>=?) AS unread',cutoff,owner,owner,owner,owner,owner,owner,cutoff);
+          return json({requests:Number(row.requests),unread:Number(row.unread)});
+        }
+        if(id)error('Ruta no encontrada.',404);
+        if(Math.random()<.1)await cleanSocial();
+        const rows=await all("SELECT f.id,f.accepted,f.requested_by=? AS outgoing,p.username,CASE WHEN pp.enabled=1 AND s.blocked_until<=? AND ps.expires>? THEN 1 ELSE 0 END AS online,CASE WHEN pp.enabled=1 AND fp.enabled=1 AND s.blocked_until<=? AND fa.last_active>=? THEN fa.last_active ELSE NULL END AS active, (SELECT count(*) FROM private_messages m WHERE m.friendship=f.id AND m.sender<>? AND m.read_at IS NULL AND m.created>=?) AS unread FROM friend_links f JOIN profiles p ON p.owner=CASE WHEN f.a=? THEN f.b ELSE f.a END JOIN sessions s ON s.id=p.owner LEFT JOIN presence_preferences pp ON pp.owner=p.owner LEFT JOIN profile_presence ps ON ps.owner=p.owner LEFT JOIN friend_activity_preferences fp ON fp.owner=p.owner LEFT JOIN friend_activity fa ON fa.owner=p.owner WHERE (f.a=? OR f.b=?) AND (f.accepted=1 OR f.created>=?) ORDER BY f.accepted DESC,online DESC,p.username COLLATE NOCASE",owner,timestamp,timestamp,timestamp,cutoff,owner,cutoff,owner,owner,owner,cutoff);
+        const age=seconds=>{const m=Math.max(0,Math.floor(seconds/60));return m<5?'Hace unos minutos':m<60?'Hace '+Math.floor(m/5)*5+' min':m<1440?'Hace '+Math.floor(m/60)+' h':'Hace '+Math.floor(m/1440)+' días';};
+        const blocked=await all('SELECT p.username FROM friend_blocks b JOIN profiles p ON p.owner=b.other WHERE b.owner=? ORDER BY p.username',owner);
+        const pref=await first('SELECT enabled FROM friend_activity_preferences WHERE owner=?',owner);
+        return json({rows:rows.map(r=>({id:r.id,username:r.username,accepted:!!r.accepted,outgoing:!!r.outgoing,online:!!r.accepted&&!!r.online,lastSeen:r.accepted&&!r.online&&r.active!==null?age(timestamp-r.active):null,unread:Number(r.unread)})),blocked:blocked.map(r=>r.username),activitySharing:pref?.enabled===1});
+      }
+      if(method!=='POST'||action)error('Ruta no encontrada.',404);
+      const data=await body(request);
+      if(id==='privacy'){
+        if(typeof data.enabled!=='boolean')error('Preferencia no válida.');
+        if(data.enabled&&await presencePreference()!==1)error('Activa primero tu estado en línea en Mi perfil.');
+        await db.batch([sql('INSERT INTO friend_activity_preferences(owner,enabled) VALUES(?,?) ON CONFLICT(owner) DO UPDATE SET enabled=excluded.enabled',owner,+data.enabled),...(!data.enabled?[sql('DELETE FROM friend_activity WHERE owner=?',owner)]:[])]);
+        return json({ok:true});
+      }
+      if(!['request','accept','decline','remove','block','unblock'].includes(id))error('Ruta no encontrada.',404);
+      const person=await participant(data.username),target=person.owner,[left,right]=[owner,target].sort();
+      if(id==='block'){
+        const count=await first('SELECT count(*) AS n FROM friend_blocks WHERE owner=?',owner);
+        if(count.n>=100&&!await first('SELECT 1 AS yes FROM friend_blocks WHERE owner=? AND other=?',owner,target))error('Límite de usuarios bloqueados alcanzado.',429);
+        await run('INSERT OR IGNORE INTO friend_blocks(owner,other) VALUES(?,?)',owner,target);
+        return json({ok:true});
+      }
+      if(id==='unblock'){await run('DELETE FROM friend_blocks WHERE owner=? AND other=?',owner,target);return json({ok:true});}
+      const existing=await related(target);
+      if(id==='remove'||id==='decline'){
+        if(!existing||(id==='remove'?!existing.accepted:!!existing.accepted))error('Solicitud o amistad no disponible.',404);
+        await run('DELETE FROM friend_links WHERE id=? AND (a=? OR b=?) AND accepted=?',existing.id,owner,owner,id==='remove'?1:0);
+        return json({ok:true});
+      }
+      if(person.blocked_until>timestamp||await first('SELECT 1 AS yes FROM friend_blocks WHERE (owner=? AND other=?) OR (owner=? AND other=?)',owner,target,target,owner))error('Usuario no disponible.',404);
+      const settings=await first('SELECT readonly FROM settings WHERE id=1');
+      if(!settings||settings.readonly)error('La comunidad está en modo de solo lectura.',403);
+      if(id==='request'){
+        if(existing)error('Ya existe una amistad o solicitud pendiente.',409);
+        await throttle('friend-request:'+owner,10,86400);
+        await cleanSocial();
+        await run('INSERT INTO friend_links(a,b,requested_by,created) VALUES(?,?,?,?)',left,right,owner,timestamp);
+        return json({ok:true},201);
+      }
+      if(!existing||existing.accepted||existing.requested_by===owner)error('Solicitud no disponible.',404);
+      const accepted=await first('UPDATE friend_links SET accepted=1 WHERE id=? AND accepted=0 AND requested_by<>? AND (a=? OR b=?) AND created>=? RETURNING id',existing.id,owner,owner,owner,cutoff);
+      if(!accepted)error('Solicitud no disponible.',404);
+      return json({ok:true});
+    }
+    const chatId=positive(id);
+    if(!chatId)error('Conversación no disponible.',404);
+    const friend=await first("SELECT f.id,p.username,s.blocked_until FROM friend_links f JOIN profiles p ON p.owner=CASE WHEN f.a=? THEN f.b ELSE f.a END JOIN sessions s ON s.id=p.owner WHERE f.id=? AND f.accepted=1 AND (f.a=? OR f.b=?) AND NOT EXISTS(SELECT 1 FROM friend_blocks WHERE (owner=f.a AND other=f.b) OR (owner=f.b AND other=f.a))",owner,chatId,owner,owner);
+    if(!friend)error('Conversación no disponible.',404);
+    if(method==='GET'&&!action){
+      const after=positive(query.get('after')),before=positive(query.get('before'));
+      if(after&&before)error('Cursor no válido.');
+      const rows=await all('SELECT id,sender=? AS own,body,created,read_at IS NOT NULL AS read FROM private_messages WHERE friendship=? AND created>=?'+(after?' AND id>?':before?' AND id<?':'')+' ORDER BY id '+(after?'ASC':'DESC')+' LIMIT 41',owner,chatId,cutoff,...(after?[after]:before?[before]:[]));
+      const more=rows.length>40,visible=rows.slice(0,40);if(!after)visible.reverse();
+      return json({username:friend.username,rows:visible,more,canSend:friend.blocked_until<=timestamp});
+    }
+    if(method!=='POST')error('Ruta no encontrada.',404);
+    const data=await body(request);
+    if(action==='read'){
+      const through=positive(data.through);if(!through)error('Mensaje no válido.');
+      await run('UPDATE private_messages SET read_at=? WHERE friendship=? AND sender<>? AND id<=? AND read_at IS NULL AND created>=?',timestamp,chatId,owner,through,cutoff);
+      return json({ok:true});
+    }
+    if(action!=='send')error('Ruta no encontrada.',404);
+    if(friend.blocked_until>timestamp)error('Usuario no disponible.',403);
+    const settings=await first('SELECT readonly FROM settings WHERE id=1');
+    if(!settings||settings.readonly)error('La comunidad está en modo de solo lectura.',403);
+    const message=field(data.body,2000,1);
+    await throttle('chat-minute:'+owner,20,60);
+    await throttle('chat-hour:'+owner,100,3600);
+    if(Math.random()<.1)await cleanSocial();
+    const row=await first('INSERT INTO private_messages(friendship,sender,body,created) VALUES(?,?,?,?) RETURNING id',chatId,owner,message,timestamp);
+    return json({id:row.id},201);
+  }
   if(resource==='presence'&&method==='POST'){
     const data=await body(request,12000);
     if(id==='preference'&&!action){
       if(!who?.username||who.username==='Ally')error('Accede a tu perfil.',401);
       if(typeof data.enabled!=='boolean')error('Preferencia no válida.');
-      await db.batch([sql('INSERT INTO presence_preferences(owner,enabled) VALUES(?,?) ON CONFLICT(owner) DO UPDATE SET enabled=excluded.enabled',owner,+data.enabled),...(!data.enabled?[sql('DELETE FROM profile_presence WHERE owner=?',owner)]:[])]);
+      await db.batch([sql('INSERT INTO presence_preferences(owner,enabled) VALUES(?,?) ON CONFLICT(owner) DO UPDATE SET enabled=excluded.enabled',owner,+data.enabled),...(!data.enabled?[sql('DELETE FROM profile_presence WHERE owner=?',owner),sql('DELETE FROM friend_activity WHERE owner=?',owner)]:[])]);
       return json({enabled:data.enabled});
     }
     if(id)error('Ruta no encontrada.',404);
@@ -228,6 +325,7 @@ async function route(request,env){
     if(data.heartbeat===true&&who?.username&&who.username!=='Ally'&&who.blocked_until<=timestamp){
       // A single short-lived row per consenting profile; no per-device history.
       await run('INSERT INTO profile_presence(owner,expires) SELECT owner,? FROM presence_preferences WHERE owner=? AND enabled=1 ON CONFLICT(owner) DO UPDATE SET expires=excluded.expires WHERE profile_presence.expires<=?',timestamp+150,owner,timestamp+105);
+      await run('INSERT INTO friend_activity(owner,last_active) SELECT pp.owner,? FROM presence_preferences pp JOIN friend_activity_preferences fp ON fp.owner=pp.owner AND fp.enabled=1 WHERE pp.owner=? AND pp.enabled=1 ON CONFLICT(owner) DO UPDATE SET last_active=excluded.last_active WHERE friend_activity.last_active<=?',timestamp,owner,timestamp-45);
     }
     if(data.heartbeat===true||Math.random()<.05)await run('DELETE FROM profile_presence WHERE rowid IN (SELECT rowid FROM profile_presence WHERE expires<=? LIMIT 100)',timestamp);
     if(!names.length)return json({online:[]});

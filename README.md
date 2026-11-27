@@ -74,3 +74,6 @@ Migración 0009: perfil reservado Ally (miembro de servicio, no puede iniciar se
 
 ## Estado en línea
 Migración 0010: presencia voluntaria por perfil, consentimiento inicial explícito y revocable desde Mi perfil. Señal de 150 segundos, renovación aproximadamente cada minuto solo con la pestaña visible, consultas de hasta 80 nombres, sin publicar fechas ni historial. Ally IA no anuncia presencia humana. Las filas caducadas se purgan con las peticiones de presencia.
+
+## Amigos y mensajes privados
+Migración 0011: solicitudes aceptadas de forma explícita, bloqueos, mensajes de texto entre miembros de cada relación, límites por cuenta y conversación, lectura paginada y contador. Mensajes accesibles durante 30 días, limpieza acotada al usar la función, eliminación del chat al romper amistad/bloquear. Sin cifrado extremo a extremo. Última actividad aproximada solo para amigos y con autorización adicional; no se consulta por la IA pública. Sondeo visible cada 15 s dentro de chat y cada minuto para avisos; no requiere servicios nuevos.

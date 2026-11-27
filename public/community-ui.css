@@ -205,3 +205,33 @@
 .forum-page .presence-choice p{margin:.25rem 0 0;color:#d4dfcb;font-size:.82rem}
 .forum-page .presence-choice-actions{display:flex;flex-wrap:wrap;gap:.5rem}
 .forum-page #profile .presence-badge{margin:0;font-size:.68rem}
+
+/* Friends and private chat */
+.forum-page #friends[hidden]{display:none!important}
+.forum-page .social-unread{display:inline-flex;min-width:1.55rem;min-height:1.55rem;align-items:center;justify-content:center;padding:.1rem .35rem;border-radius:99px;background:#bdf88b;color:#17220d;font-size:.75rem;font-weight:850}
+.forum-page button.friend-inline{min-height:32px;min-width:0;font-size:.72rem;padding:.28rem .5rem;margin:.1rem .25rem;background:#253526;color:#e3ffc9;border-color:#789668;vertical-align:middle}
+@media(pointer:coarse){.forum-page button.friend-inline{min-height:44px}}
+.forum-page .friends-view,.forum-page .private-chat{display:grid;gap:.8rem;min-width:0}
+.forum-page .friend-add{display:flex;align-items:end;gap:.6rem;flex-wrap:wrap}
+.forum-page .friend-add label{flex:1 1 180px}
+.forum-page .social-hint{font-size:.82rem;color:#cfc4de;line-height:1.5;margin:0}
+.forum-page .friend-group{padding:.75rem 0;border-top:1px solid #55446a}
+.forum-page .friend-group h3{margin:0 0 .6rem;font-size:1rem}
+.forum-page .friend-row{display:flex;align-items:center;justify-content:space-between;gap:.6rem;flex-wrap:wrap;margin:.45rem 0;padding:.75rem;border:1px solid #5b486e;border-radius:.75rem;background:#191524}
+.forum-page .friend-row>div:first-child{min-width:0;overflow-wrap:anywhere}
+.forum-page .friend-row small{display:block;color:#bfb5cd;font-size:.78rem}
+.forum-page .friend-row .friend-state.online{color:#c5f6a4}
+.forum-page .friend-state.online::before{content:"";display:inline-block;width:.48rem;height:.48rem;margin-right:.35rem;background:#a5ee78;border-radius:50%}
+.forum-page .friend-actions,.forum-page .chat-tools{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center}
+.forum-page .friend-actions button{font-size:.8rem;padding:.55rem .65rem}
+.forum-page .friend-refresh{justify-self:start}
+.forum-page .chat-log{display:flex;flex-direction:column;gap:.6rem;min-height:150px;height:min(43dvh,370px);overflow-y:auto;overscroll-behavior:contain;padding:.8rem;border:1px solid #5b486e;border-radius:.8rem;background:#15111f}
+.forum-page .chat-message{align-self:flex-start;max-width:85%;min-width:0;padding:.65rem .8rem;border:1px solid #685383;border-radius:.85rem .85rem .85rem .2rem;background:#30243f}
+.forum-page .chat-message.own{align-self:flex-end;background:#263a2a;border-color:#769a5c;border-radius:.85rem .85rem .2rem .85rem}
+.forum-page .chat-text{white-space:pre-wrap;overflow-wrap:anywhere;color:#f5edff;font-size:.94rem}
+.forum-page .chat-time{display:block;margin-top:.3rem;color:#c8bfd1;font-size:.69rem;text-align:right}
+.forum-page .chat-compose{display:flex;align-items:end;gap:.6rem}
+.forum-page .chat-compose label{flex:1;min-width:0}
+.forum-page .chat-compose textarea{resize:vertical;max-height:140px}
+.forum-page .private-chat [hidden]{display:none!important}
+@media(max-width:520px){.forum-page .chat-message{max-width:94%}.forum-page .friend-actions{width:100%}.forum-page .friend-actions button{flex:1 1 auto}.forum-page .chat-compose{flex-wrap:wrap}.forum-page .chat-compose button{flex:1 1 100%}}
