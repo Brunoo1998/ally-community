@@ -172,3 +172,18 @@ body:has(dialog[open]) .ally-pet{display:none}
 .legal-footer a{font-size:.83rem}
 @media(max-width:850px){.legal-grid{grid-template-columns:1fr;gap:1rem}.legal-sidebar{display:none}.legal-section{gap:.9rem}}
 @media(max-width:640px){.legal-page .legal.shell{width:min(100% - 1.5rem,1120px)}.legal-hero{padding:1.3rem}.legal-hero h1{font-size:2rem}.legal-overview{grid-template-columns:1fr;gap:.55rem}.legal-fact{min-height:0;padding:.75rem 1rem}.legal-fact-dot{margin-bottom:.35rem}.legal-tabs a{padding:.6rem .7rem;font-size:.85rem}.legal-section{padding:1.25rem 0;gap:.7rem}.legal-number{width:32px;height:32px;font-size:.75rem}.legal-section h2{font-size:1.13rem}.legal-section p,.legal-section li{font-size:.91rem;line-height:1.73}.legal-end{align-items:flex-start;flex-direction:column}.legal-crosslinks{align-items:flex-start;flex-direction:column}.legal-return{font-size:.79rem;padding:.48rem .6rem}.legal-page .brand{font-size:.84rem}}
+
+/* Reacciones de Ally Community: un mismo voto por usuario y contenido. */
+.card{display:block}
+.reaction-bar{display:flex;flex-wrap:wrap;align-items:center;gap:.45rem;margin:.75rem 0 .45rem}
+.reaction-button{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;width:auto;min-height:38px;padding:.35rem .7rem;border-radius:99px;background:#241d30;border:1px solid #554365;color:#dfd3e9;font-size:.81rem;font-weight:650;line-height:1.3}
+.reaction-button:hover:not(:disabled){background:#332344;border-color:#a786ca}
+.reaction-button[aria-pressed="true"]{background:#293c25;border-color:#aaf16d;color:#dcffbb}
+.reaction-button:disabled{opacity:.55;cursor:progress}
+.reaction-icon{font-size:.92rem;line-height:1}
+.reaction-count{display:inline-flex;justify-content:center;align-items:center;min-width:1.55rem;padding:.1rem .37rem;border-radius:99px;background:#140f1b;color:#e8dff2;font-size:.76rem;font-variant-numeric:tabular-nums}
+.reaction-like[aria-pressed="true"] .reaction-count{background:#405b2e;color:#edffda}
+.reaction-score{margin-left:.25rem;font-size:.75rem;color:#afa1bd;font-variant-numeric:tabular-nums}
+.comment .reaction-bar{margin:.65rem 0 .4rem}
+@media(max-width:640px){.card{display:block;padding:.8rem}.reaction-button{min-height:40px;padding:.42rem .58rem;font-size:.77rem}.reaction-score{margin-left:0}.reaction-bar{gap:.4rem}}
+@media(prefers-reduced-motion:no-preference){.reaction-button{transition:background .16s ease,border-color .16s ease,transform .16s ease}.reaction-button:active:not(:disabled){transform:scale(.97)}}
