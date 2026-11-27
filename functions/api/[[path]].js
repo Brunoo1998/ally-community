@@ -174,6 +174,7 @@ async function route(request,env){
     }
     if(id==='claim-admin'){
       if(!who.username)error('Crea tu perfil primero.',400);
+      await throttle('admin-claim:'+owner,5,3600);
       await admin(request,env);
       if(await first("SELECT owner FROM profiles WHERE role='admin' AND owner<>?",owner))error('Ya existe un perfil administrador.',409);
       await run("UPDATE profiles SET role='admin' WHERE owner=?",owner);

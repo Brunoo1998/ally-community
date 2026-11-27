@@ -92,6 +92,7 @@ async function verifySession(resume){
 function updateProfile(){
   const p=meta.profile, node=$('#profile');
   node.textContent=p?'@'+p.username:'Elegir nombre';
+  if(p)document.body.dataset.allyProfile=p.username;else delete document.body.dataset.allyProfile;
   node.classList.toggle('admin-profile',p?.role==='admin');
   node.setAttribute('aria-label',p?'Mi perfil: '+p.username:'Elegir nombre de usuario');
   $('#moderation').hidden=p?.role!=='admin';
@@ -106,7 +107,7 @@ function recoveryView(code,resume){
 }
 function chooseProfile(resume=()=>load()){
   open('¡Bienvenido a Ally Community!');
-  el('p','Soy Ally. ¿Cómo quieres que te llamemos? Elige un nombre único; no necesitas correo ni contraseña.',content);
+  const intro=el('div',undefined,content);intro.className='profile-welcome';const mascot=el('img',undefined,intro);mascot.src='/ally.webp';mascot.alt='';mascot.width=54;mascot.height=54;el('p','Soy Ally. ¿Cómo quieres que te llamemos? Elige un nombre único; no necesitas correo ni contraseña.',intro);
   const f=el('form',undefined,content);f.className='stack';
   const name=input(f,'Nombre de usuario','username',{max:20,required:true});name.minLength=3;name.pattern='[A-Za-z0-9_]{3,20}';name.autocomplete='username';
   el('small','De 3 a 20 letras, números o guiones bajos. El nombre será público.',f);
@@ -119,7 +120,7 @@ function chooseProfile(resume=()=>load()){
 function recoverProfile(resume){
   open('Recupera tu perfil');
   const f=el('form',undefined,content);f.className='stack';
-  const code=input(f,'Código de recuperación','code',{max:64,required:true});code.type='password';code.autocomplete='off';
+  const code=input(f,'Código de recuperación','code',{max:64,required:true});code.type='password';code.autocomplete='off';code.minLength=64;code.pattern='[A-Fa-f0-9]{64}';
   const submit=el('button','Recuperar perfil',f);submit.className='primary';
   f.onsubmit=e=>{e.preventDefault();if(submit.disabled)return;submit.disabled=true;const value=code.value.trim();void attempt(async()=>{try{await verifySession(async()=>{await api('profile/recover',{code:value});await refreshProfile();modal.close();await resume?.();});}finally{submit.disabled=false;}});};
 }
@@ -341,6 +342,7 @@ async function init(){
     if(params.get('share')==='1')button(box,'Abrir borrador de configuración',()=>session(()=>editor({shared:true})));
   }
   await load();
-  if(!meta.profile&&!sessionStorage.getItem('ally-profile-prompted')){try{sessionStorage.setItem('ally-profile-prompted','1');}catch{}chooseProfile();}
+  let prompted=false;try{prompted=sessionStorage.getItem('ally-profile-prompted')==='1';}catch{}
+  if(!meta.profile&&!prompted){try{sessionStorage.setItem('ally-profile-prompted','1');}catch{}chooseProfile();}
 }
 void attempt(init);

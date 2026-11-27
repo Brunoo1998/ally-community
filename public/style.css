@@ -106,3 +106,5 @@ body:has(dialog[open]) .ally-pet{display:none}
 }
 
 .admin-badge{display:inline-block;margin-inline-start:.5rem;padding:.1rem .35rem;border:1px solid #a9ec6f;border-radius:.3rem;color:#b1f874;font-size:.7rem;font-weight:800;vertical-align:middle}.admin-profile{border-color:#b1f874;color:#b1f874;font-weight:700}#profile{max-width:100%;overflow-wrap:anywhere}#moderation{color:var(--green)}
+
+.profile-welcome{display:flex;align-items:center;gap:.8rem;margin:.5rem 0 1rem}.profile-welcome img{width:54px;height:54px;object-fit:contain;flex:none}.profile-welcome p{margin:0}

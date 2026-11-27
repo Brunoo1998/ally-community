@@ -123,7 +123,7 @@ const reactions=[
  ['shake','¡Activando el modo terremoto!','⚡'],
  ['bow','¡Muchas gracias, público maravilloso!','♥']
 ];
-let bag=[],lastReaction='',lastTap=-Infinity,tapStreak=0,gestureUntil=0,gesture=null,holdTimer,hoverAt=-Infinity,effectTimer,idleIndex=0;
+let greetedProfile=false,bag=[],lastReaction='',lastTap=-Infinity,tapStreak=0,gestureUntil=0,gesture=null,holdTimer,hoverAt=-Infinity,effectTimer,idleIndex=0;
 function randomReaction(){
   if(!bag.length){
     bag=reactions.slice();
@@ -217,6 +217,7 @@ pet.addEventListener('click',e=>{
   tapStreak=now-lastTap<390?tapStreak+1:1;lastTap=now;
   if(tapStreak===2){reaction('dance','¡Doble toque! ¡Que empiece la fiesta!','♫');return;}
   if(tapStreak>=3){tapStreak=0;lastTap=-Infinity;startGaming();return;}
+  if(!greetedProfile&&document.body.dataset.allyProfile){greetedProfile=true;reaction('wave','¡Ey, '+document.body.dataset.allyProfile+'! ¡Qué alegría verte, colega!','♥');return;}
   reaction(...randomReaction());
 });
 pet.addEventListener('pointerenter',e=>{
