@@ -172,13 +172,13 @@ try{
   const limitedPage=(await req('posts?after=0:999999:999999')).result.rows;
   assert.ok(Array.isArray(limitedPage[0]?.latestComments));
   await req('comments/'+comment+'/edit',{cookie:b,data:{body:'Comentario corregido'}});
-  assert.equal((await req('comments?post='+post,{cookie:a})).result.rows[0].likes,0);
+  assert.equal((await req('comments?post='+post,{cookie:a})).result.rows.find(item=>item.id===comment).likes,0);
   await req('vote',{cookie:a,data:{kind:'comment',target:comment,value:1}});
-  assert.equal((await req('comments?post='+post,{cookie:a})).result.rows[0].likes,1);
+  assert.equal((await req('comments?post='+post,{cookie:a})).result.rows.find(item=>item.id===comment).likes,1);
   await req('vote',{cookie:a,data:{kind:'comment',target:comment,value:0}});
-  assert.equal((await req('comments?post='+post,{cookie:a})).result.rows[0].likes,0);
+  assert.equal((await req('comments?post='+post,{cookie:a})).result.rows.find(item=>item.id===comment).likes,0);
   await req('comments/'+comment+'/delete',{cookie:b,data:{}});
-  assert.equal((await req('comments?post='+post)).result.rows[0].status,'deleted');
+  assert.equal((await req('comments?post='+post)).result.rows.find(item=>item.id===comment).status,'deleted');
   assert.equal((await req('posts/'+post)).result.likes,0);
   assert.equal((await req('posts?')).result.rows[0].likes,0);
   for(const [value,score,likes] of [[1,1,1],[1,1,1],[-1,-1,0],[0,0,0]]){
