@@ -187,3 +187,16 @@ body:has(dialog[open]) .ally-pet{display:none}
 .comment .reaction-bar{margin:.65rem 0 .4rem}
 @media(max-width:640px){.card{display:block;padding:.8rem}.reaction-button{min-height:40px;padding:.42rem .58rem;font-size:.77rem}.reaction-score{margin-left:0}.reaction-bar{gap:.4rem}}
 @media(prefers-reduced-motion:no-preference){.reaction-button{transition:background .16s ease,border-color .16s ease,transform .16s ease}.reaction-button:active:not(:disabled){transform:scale(.97)}}
+
+/* Visitas únicas y ranking: diseño ligero y responsive. */
+.feed-heading{display:flex;align-items:center;justify-content:space-between;gap:.8rem;flex-wrap:wrap;margin:.6rem 0 .45rem}
+.feed-heading h1{margin:.5rem 0}
+.ranking-link{display:inline-flex;align-items:center;justify-content:center;gap:.35rem;text-decoration:none;padding:.55rem .85rem;border-radius:.75rem;border:1px solid #73548d;background:#291d37;color:#f1ddff;font-size:.86rem;font-weight:720;min-height:44px}
+.ranking-link:hover{border-color:var(--green);color:var(--green);background:#292c28}
+.post-metrics{display:flex;flex-wrap:wrap;align-items:center;gap:.65rem;color:#cbbdda;font-size:.84rem;margin:.75rem 0 .25rem}
+.post-view-count{display:inline-flex;align-items:center;gap:.2rem;padding:.18rem .55rem;border:1px solid #514064;border-radius:99px;background:#1a1524;color:#dfead6;font-size:.8rem;font-variant-numeric:tabular-nums}
+.most-visited-list{padding-left:1.55rem;display:grid;gap:.5rem;margin:.5rem 0 1rem}
+.most-visited-list li{padding-left:.2rem}
+.most-visited-list li::marker{font-weight:750;color:var(--green)}
+.most-visited-list small{display:inline-block;margin-left:.5rem;white-space:nowrap;font-size:.78rem}
+@media(max-width:640px){.feed-heading{align-items:flex-start}.ranking-link{font-size:.82rem}.post-metrics{gap:.4rem;font-size:.79rem}.post-view-count{font-size:.77rem}.most-visited-list small{display:block;margin-left:0}}
