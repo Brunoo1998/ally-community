@@ -1,11 +1,27 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="160" height="76" viewBox="0 0 160 76">
+<svg xmlns="http://www.w3.org/2000/svg" width="176" height="88" viewBox="-8 -10 176 88">
 <title>Consola portátil negra vista desde atrás, orientada hacia el jugador</title>
 <defs>
  <linearGradient id="rear" x1="0" y1="0" x2=".22" y2="1"><stop stop-color="#545762"/><stop offset=".23" stop-color="#282b34"/><stop offset=".7" stop-color="#171922"/><stop offset="1" stop-color="#0b0d13"/></linearGradient>
  <linearGradient id="grip" x1="0" y1="0" x2="1" y2=".6"><stop stop-color="#454952"/><stop offset=".48" stop-color="#20232c"/><stop offset="1" stop-color="#10121a"/></linearGradient>
  <linearGradient id="lip" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#666a76"/><stop offset="1" stop-color="#2a2d37"/></linearGradient>
  <pattern id="vent" width="5" height="4" patternUnits="userSpaceOnUse"><path d="M1 1h2.7" stroke="#07090e" stroke-width="1.5" stroke-linecap="round"/></pattern>
+ <linearGradient id="armor" x1="0" y1="0" x2=".8" y2="1"><stop stop-color="#84669c"/><stop offset=".48" stop-color="#483454"/><stop offset="1" stop-color="#25202f"/></linearGradient>
+ <linearGradient id="finger" x1="0" y1="0" x2=".6" y2="1"><stop stop-color="#9b7cb0"/><stop offset=".5" stop-color="#5a426d"/><stop offset="1" stop-color="#382b49"/></linearGradient>
+ <g id="arm-behind">
+  <path d="M27 -7 Q33 -8 35 -3 L32 9 Q30 16 22 22 L12 33 Q7 35 4 29 L6 18 Q12 11 19 6Z" fill="url(#armor)" stroke="#292032" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M19 6l7 6M10 17l6 5" stroke="#a48ab4" stroke-width="1.1" opacity=".8"/>
+  <path d="M7 25Q-1 26 -3 34L-3 49Q-2 57 5 59L11 56 13 29Z" fill="url(#armor)" stroke="#292032" stroke-width="1.5"/>
+ </g>
+ <!-- The palm is behind the case; only the fingertips curled over the outer edge are in front. -->
+ <g id="fingers-front" stroke="#2b2138" stroke-width="1.1" stroke-linejoin="round">
+  <path d="M-1 33Q1 28 7 28L11 30Q15 33 12 36L5 35 0 38Q-2 36-1 33Z" fill="url(#finger)"/>
+  <path d="M-2 40Q1 36 7 37L13 39Q16 42 13 45L5 43 0 46Q-3 44-2 40Z" fill="url(#finger)"/>
+  <path d="M-1 48Q1 44 6 45L11 47Q14 50 11 53L5 51 1 54Q-2 52-1 48Z" fill="url(#finger)"/>
+  <path d="M2 32l4-.8M2 41l4-.5M2 49l3-.2" stroke="#c3a9d2" stroke-width=".8" stroke-linecap="round" opacity=".7"/>
+ </g>
 </defs>
+<!-- Rear arms and palms are painted FIRST; the opaque shell hides them. -->
+<use href="#arm-behind"/><use href="#arm-behind" transform="translate(160 0) scale(-1 1)"/>
 <!-- The top edge is foreshortened; the display and face buttons face away. -->
 <path d="M23 13Q25 6 36 6H124Q136 6 139 13L145 23H15Z" fill="url(#lip)" stroke="#747782" stroke-width=".8"/>
 <path d="M16 9Q22 4 35 6L41 17H15Q10 14 16 9ZM119 17L125 6Q138 4 144 9Q150 14 145 17Z" fill="#12151d" stroke="#5b606d" stroke-width="1"/>
@@ -21,4 +37,6 @@
 <path d="M50 54l5 2M105 56l5-2" stroke="#656975" stroke-width=".75" stroke-linecap="round"/>
 <path d="M13 25Q13 20 19 18M147 25Q147 20 141 18" fill="none" stroke="#a3bd8b" stroke-width="1.4" opacity=".8"/>
 <path d="M60 14H100" stroke="#b1f874" stroke-width="1.1" opacity=".45"/>
+<!-- Foreground finger pads contact only the outside grip, never the center of the console. -->
+<use href="#fingers-front"/><use href="#fingers-front" transform="translate(160 0) scale(-1 1)"/>
 </svg>

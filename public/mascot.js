@@ -12,14 +12,10 @@ pet.append(img);
 const consoleProp=document.createElement('span');
 consoleProp.className='ally-pet-console';
 consoleProp.setAttribute('aria-hidden','true');
+// One illustrated rig: wrists behind the shell, curled fingers in front of its edges.
 const consoleArt=document.createElement('img');
-consoleArt.src='/ally-handheld.svg';consoleArt.alt='';consoleArt.draggable=false;
-const leftArm=document.createElement('span');leftArm.className='ally-play-arm left';
-const rightArm=document.createElement('span');rightArm.className='ally-play-arm right';
-const leftHand=document.createElement('img');leftHand.className='ally-play-hand left';leftHand.src='/ally-hand-grip.svg';leftHand.alt='';leftHand.draggable=false;
-const rightHand=document.createElement('img');rightHand.className='ally-play-hand right';rightHand.src='/ally-hand-grip.svg';rightHand.alt='';rightHand.draggable=false;
-consoleArt.className='ally-console-back';consoleArt.src='/ally-handheld.svg?v=rear-2';
-consoleProp.append(leftArm,rightArm,consoleArt,leftHand,rightHand);pet.append(consoleProp);
+consoleArt.className='ally-console-back';consoleArt.src='/ally-handheld.svg?v=grip-3';consoleArt.alt='';consoleArt.draggable=false;
+consoleProp.append(consoleArt);pet.append(consoleProp);
 const hide=document.createElement('button');
 hide.type='button';hide.className='ally-pet-hide';hide.textContent='×';hide.setAttribute('aria-label','Minimizar mascota');
 const restore=document.createElement('button');
