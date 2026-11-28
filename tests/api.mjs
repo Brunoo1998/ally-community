@@ -119,6 +119,10 @@ try{
   await req('posts',{cookie:a,data:draft,origin:'https://irrelevant.test',status:403});
   const post=(await req('posts',{cookie:a,data:draft,status:201})).result.id;
   await req('posts',{cookie:a,data:draft,status:409});
+  const searchResult=await req('public-search?q=cyberpunk');
+  assert.equal(searchResult.result.rows[0].id,post);
+  assert.ok(!('owner' in searchResult.result.rows[0]));
+  assert.deepEqual((await req('public-search?q=zzinexistente')).result.rows,[]);
   const publicBench=await req('benchmarks?game=cyberpunk-2077-rog-xbox-ally-x');
   assert.equal(publicBench.result.rows.length,1);
   assert.equal(publicBench.result.rows[0].fps,60);
