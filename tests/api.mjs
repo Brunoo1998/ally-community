@@ -20,6 +20,7 @@ db.exec(readFileSync(new URL('../migrations/0009_ally_bot.sql',import.meta.url),
 db.exec(readFileSync(new URL('../migrations/0010_presence.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0011_friends.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0012_social_notifications.sql',import.meta.url),'utf8'));
+db.exec(readFileSync(new URL('../migrations/0013_social_features.sql',import.meta.url),'utf8'));
 const env={
   TURNSTILE_SITE_KEY:'test-site-key',TURNSTILE_SECRET:'test-secret',
   RATE_SECRET:'r'.repeat(64),ADMIN_TOKEN:'a'.repeat(64),
@@ -159,6 +160,22 @@ try{
   await req('posts/'+post+'/edit',{cookie:a,data:{title:'Ajustes nuevos',body:'Texto nuevo'}});
   const comment=(await req('comments',{cookie:b,data:{post,body:'He probado los ajustes.'},status:201})).result.id;
   const replyId=(await req('comments',{cookie:a,data:{post,parent:comment,body:'Gracias por la prueba.'},status:201})).result.id;
+  await req('profile/public-details',{cookie:a,data:{avatar:'🎮',color:'green',bio:'Pruebas de juegos',model:'Xbox ROG Ally X'}});
+  const member=(await req('member/TestGamer')).result.profile;
+  assert.equal(member.bio,'Pruebas de juegos');assert.equal(member.rank,'Administrador');assert.ok(!('owner' in member));
+  await req('thread-tools/'+post+'/solution',{cookie:b,data:{comment},status:403});
+  await req('thread-tools/'+post+'/solution',{cookie:a,data:{comment}});
+  assert.equal((await req('thread-tools/'+post)).result.solution.id,comment);
+  await req('thread-tools/'+post+'/solution',{cookie:a,data:{comment:null}});
+  await req('thread-tools/'+post+'/poll',{cookie:b,data:{options:['Uno','Dos']},status:403});
+  await req('thread-tools/'+post+'/poll',{cookie:a,data:{options:['Uno','Dos']},status:201});
+  await req('thread-tools/'+post+'/vote',{cookie:b,data:{choice:1}});
+  await req('thread-tools/'+post+'/vote',{cookie:b,data:{choice:0}});
+  assert.deepEqual((await req('thread-tools/'+post,{cookie:b})).result.poll.counts,[1,0]);
+  await req('thread-tools/'+post+'/follow',{cookie:b,data:{enabled:true}});
+  assert.equal((await req('thread-tools/'+post,{cookie:b})).result.following,true);
+  await req('thread-tools/'+post+'/follow',{cookie:b,data:{enabled:false}});
+
   const firstPreview=(await req('posts?')).result.rows.find(row=>row.id===post).latestComments;
   assert.equal(firstPreview.length,2);
   assert.deepEqual(firstPreview.map(item=>item.id),[replyId,comment]);

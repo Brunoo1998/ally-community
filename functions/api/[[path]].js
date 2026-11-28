@@ -120,6 +120,71 @@ async function route(request,env){
     const row=await first('INSERT INTO rate VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET hits=hits+1 WHERE hits<? RETURNING hits',key+':'+expires,expires,max);
     if(!row)error('Has alcanzado el límite. Inténtalo más tarde.',429);
   };
+  if(resource==='member'&&method==='GET'&&id&&!action){
+    if(!/^[A-Za-z0-9_]{3,20}$/.test(id))error('Perfil no disponible.',404);
+    const member=await first("SELECT p.username,p.role,p.created,d.avatar,d.bio,d.model,d.color,(SELECT count(*) FROM posts t JOIN categories k ON k.id=t.category WHERE t.owner=p.owner AND t.status='public' AND k.hidden=0) AS posts,(SELECT count(*) FROM votes v JOIN posts t ON v.kind='post' AND v.target=t.id JOIN categories k ON k.id=t.category WHERE t.owner=p.owner AND t.status='public' AND k.hidden=0 AND v.value=1 AND v.owner<>p.owner)+(SELECT count(*) FROM votes v JOIN comments c ON v.kind='comment' AND v.target=c.id JOIN posts t ON t.id=c.post JOIN categories k ON k.id=t.category WHERE c.owner=p.owner AND c.status='public' AND t.status='public' AND k.hidden=0 AND v.value=1 AND v.owner<>p.owner) AS helpful FROM profiles p JOIN sessions s ON s.id=p.owner LEFT JOIN profile_public_details d ON d.owner=p.owner WHERE p.username=? COLLATE NOCASE AND s.blocked_until<=?",id,timestamp);
+    if(!member)error('Perfil no disponible.',404);
+    const rank=member.role==='admin'?'Administrador':member.username==='Ally'?'Asistente Ally':member.helpful>=100?'Leyenda Ally':member.helpful>=40?'Experto Ally':member.helpful>=15?'Veterano':member.helpful>=5?'Explorador':'Recién llegado';
+    const recent=await all("SELECT t.id,t.title FROM posts t JOIN categories k ON k.id=t.category JOIN profiles p ON p.owner=t.owner WHERE p.username=? COLLATE NOCASE AND t.status='public' AND k.hidden=0 ORDER BY t.id DESC LIMIT 10",id);
+    return json({profile:{...member,rank,avatar:member.avatar||'🎮',bio:member.bio||'',model:member.model||'',color:member.color||'purple'},recent});
+  }
+  if(resource==='thread-tools'&&positive(id)){
+    const post=positive(id);
+    const item=await first("SELECT p.id,p.owner,p.closed FROM posts p JOIN categories k ON k.id=p.category WHERE p.id=? AND p.status='public' AND k.hidden=0",post);
+    if(!item)error('Publicación no disponible.',404);
+    if(method==='GET'&&!action){
+      const solution=await first("SELECT c.id,c.body,p.username FROM accepted_solutions a JOIN comments c ON c.id=a.comment AND c.post=a.post LEFT JOIN profiles p ON p.owner=c.owner WHERE a.post=? AND c.status='public'",post);
+      const poll=await first('SELECT options FROM thread_polls WHERE post=?',post);
+      const following=who?.username?!!await first('SELECT 1 AS yes FROM thread_follows WHERE post=? AND owner=?',post,owner):false;
+      let vote=null,counts=[];
+      if(poll){
+        const grouped=await all('SELECT choice,count(*) AS total FROM thread_poll_votes WHERE post=? GROUP BY choice',post);
+        counts=JSON.parse(poll.options).map((_,i)=>Number(grouped.find(r=>r.choice===i)?.total||0));
+        if(who?.username)vote=(await first('SELECT choice FROM thread_poll_votes WHERE post=? AND owner=?',post,owner))?.choice??null;
+      }
+      return json({solution,poll:poll?{options:JSON.parse(poll.options),counts,vote}:null,following});
+    }
+    if(method!=='POST'||!who?.username||who.username==='Ally')error('Accede a tu perfil.',401);
+    if(who.blocked_until>timestamp)error('Esta sesión está restringida.',403);
+    const settings=await first('SELECT * FROM settings WHERE id=1');
+    if(!settings||settings.readonly)error('La comunidad está en modo de solo lectura.',403);
+    const data=await body(request);
+    await throttle('thread-tools:'+owner,30,600);
+    if(action==='follow'){
+      if(typeof data.enabled!=='boolean')error('Preferencia no válida.');
+      if(data.enabled){
+        if((await first('SELECT count(*) AS n FROM thread_follows WHERE owner=?',owner)).n>=100&&!await first('SELECT 1 AS yes FROM thread_follows WHERE owner=? AND post=?',owner,post))error('Límite de 100 hilos seguidos.',429);
+        if((await first('SELECT count(*) AS n FROM thread_follows WHERE post=?',post)).n>=500&&!await first('SELECT 1 AS yes FROM thread_follows WHERE owner=? AND post=?',owner,post))error('Este hilo ha alcanzado su límite de seguidores.',429);
+        await run('INSERT OR IGNORE INTO thread_follows(owner,post) VALUES(?,?)',owner,post);
+      }else await run('DELETE FROM thread_follows WHERE owner=? AND post=?',owner,post);
+      return json({ok:true});
+    }
+    if(action==='solution'){
+      if(item.owner!==owner)error('Solo el autor del hilo puede marcar una solución.',403);
+      if(data.comment===null){await run('DELETE FROM accepted_solutions WHERE post=?',post);return json({ok:true});}
+      const comment=positive(data.comment);
+      if(!comment||!await first("SELECT id FROM comments WHERE id=? AND post=? AND status='public'",comment,post))error('Comentario no disponible.',404);
+      await run('INSERT INTO accepted_solutions(post,comment) VALUES(?,?) ON CONFLICT(post) DO UPDATE SET comment=excluded.comment',post,comment);
+      return json({ok:true});
+    }
+    if(action==='poll'){
+      if(item.owner!==owner)error('Solo el autor puede crear una encuesta.',403);
+      if(settings.review||item.closed)error('Las encuestas no están disponibles en este hilo.',403);
+      if(!Array.isArray(data.options)||data.options.length<2||data.options.length>6)error('Indica de dos a seis opciones.');
+      const options=data.options.map(s=>field(s,80,1));
+      if(new Set(options.map(s=>s.toLowerCase())).size!==options.length)error('Las opciones deben ser diferentes.');
+      if(!await first('INSERT INTO thread_polls(post,options,created) VALUES(?,?,?) ON CONFLICT(post) DO NOTHING RETURNING post',post,JSON.stringify(options),timestamp))error('El hilo ya tiene una encuesta.',409);
+      return json({ok:true},201);
+    }
+    if(action==='vote'){
+      if(item.closed)error('El hilo está cerrado.',403);
+      const poll=await first('SELECT options FROM thread_polls WHERE post=?',post);
+      if(!poll||!Number.isInteger(data.choice)||data.choice<0||data.choice>=JSON.parse(poll.options).length)error('Opción no válida.');
+      await run('INSERT INTO thread_poll_votes(post,owner,choice) VALUES(?,?,?) ON CONFLICT(post,owner) DO UPDATE SET choice=excluded.choice',post,owner,data.choice);
+      return json({ok:true});
+    }
+    error('Ruta no encontrada.',404);
+  }
   if(resource==='photos'&&method==='GET'){
     const target=positive(action), index=Number(query.get('index')||0);
     if(!['post','comment'].includes(id)||!target||!Number.isInteger(index)||index<0||index>=3)error('Imagen no disponible.',404);
@@ -242,7 +307,8 @@ async function route(request,env){
         if(id==='summary'){
           const row=await first('SELECT (SELECT count(*) FROM friend_links WHERE accepted=0 AND created>=? AND requested_by<>? AND (a=? OR b=?)) AS requests,(SELECT count(*) FROM private_messages m JOIN friend_links f ON f.id=m.friendship WHERE f.accepted=1 AND (f.a=? OR f.b=?) AND m.sender<>? AND m.read_at IS NULL AND m.created>=?) AS unread',cutoff,owner,owner,owner,owner,owner,owner,cutoff);
           const outcomes=await first('SELECT count(*) AS n FROM friend_outcome_notices WHERE owner=? AND read_at IS NULL AND created>=?',owner,cutoff);
-          return json({requests:Number(row.requests),unread:Number(row.unread),outcomes:Number(outcomes.n)});
+          const normal=await first('SELECT count(*) AS n FROM (SELECT id FROM notices WHERE owner=? AND id>coalesce((SELECT through_id FROM notice_read_cursor WHERE owner=?),0) ORDER BY id DESC LIMIT 99)',owner,owner);
+          return json({requests:Number(row.requests),unread:Number(row.unread),outcomes:Number(outcomes.n),notices:Number(normal.n)});
         }
         if(id)error('Ruta no encontrada.',404);
         if(Math.random()<.1)await cleanSocial();
@@ -377,6 +443,16 @@ async function route(request,env){
     if(!who)error('Verifica tu sesión primero.',401);
     if(who.blocked_until>timestamp)error('Esta sesión está restringida.',403);
     const data=await body(request);
+    if(id==='public-details'){
+      if(!who.username||who.username==='Ally')error('Accede a tu perfil.',401);
+      const settings=await first('SELECT * FROM settings WHERE id=1');
+      if(!settings||settings.readonly)error('La comunidad está en modo de solo lectura.',403);
+      await throttle('public-profile:'+owner,10,3600);
+      if(!['🎮','🤖','🕹️','👾','🚀','🐉','⚡','🐱'].includes(data.avatar)||!['purple','green','blue','orange'].includes(data.color))error('Personalización no válida.');
+      const bio=field(data.bio||'',280),model=field(data.model||'',60);
+      await run('INSERT INTO profile_public_details(owner,avatar,bio,model,color) VALUES(?,?,?,?,?) ON CONFLICT(owner) DO UPDATE SET avatar=excluded.avatar,bio=excluded.bio,model=excluded.model,color=excluded.color',owner,data.avatar,bio,model,data.color);
+      return json({ok:true});
+    }
     if(id==='revoke-other-devices'){
       if(!who.username||!device||device.expires<=timestamp)error('Necesitas una sesión de perfil activa.',401);
       await throttle('revoke-devices:'+owner,5,3600);
@@ -490,7 +566,16 @@ async function route(request,env){
     error('Ruta no encontrada.',404);
   }
   if(resource==='notices'&&method==='GET'){
-    return json({rows:who?await all('SELECT id,post,message,created FROM notices WHERE owner=? ORDER BY id DESC LIMIT 30',owner):[]});
+    const cursor=who?.username?(await first('SELECT through_id FROM notice_read_cursor WHERE owner=?',owner))?.through_id||0:0;
+    const rows=who?await all('SELECT id,post,message,created FROM notices WHERE owner=? ORDER BY id DESC LIMIT 30',owner):[];
+    return json({rows,unread:rows.filter(r=>r.id>cursor).length,through:cursor});
+  }
+  if(resource==='notices'&&id==='read'&&method==='POST'){
+    if(!who?.username)error('Accede a tu perfil.',401);
+    const data=await body(request),through=positive(data.through);
+    if(!through||!await first('SELECT id FROM notices WHERE owner=? AND id=?',owner,through))error('Aviso no válido.');
+    await run('INSERT INTO notice_read_cursor(owner,through_id) VALUES(?,?) ON CONFLICT(owner) DO UPDATE SET through_id=max(through_id,excluded.through_id)',owner,through);
+    return json({ok:true});
   }
   // Solo configuraciones públicas: no se incluyen usuarios, mensajes privados, fotos ni datos de sesión.
   if(resource==='benchmarks'&&method==='GET'&&!id){

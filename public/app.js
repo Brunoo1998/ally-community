@@ -191,11 +191,11 @@ function socialBadge(total){
 }
 async function refreshSocialBadge(){
   if(!meta?.profile||document.hidden||socialBusy)return;
-  const username=meta.profile.username;socialBusy=true;try{const d=await api('friends/summary');if(meta?.profile?.username!==username)return;socialBadge(d.requests+d.unread);socialNoticeCount=d.requests+d.unread+d.outcomes;paintNoticeCount();}catch{}finally{socialBusy=false;}
+  const username=meta.profile.username;socialBusy=true;try{const d=await api('friends/summary');if(meta?.profile?.username!==username)return;socialBadge(d.requests+d.unread);socialNoticeCount=d.requests+d.unread+d.outcomes;normalNoticeCount=Number(d.notices)||0;paintNoticeCount();}catch{}finally{socialBusy=false;}
 }
 function activeView(view){return modal.open&&view?.isConnected;}
 function friendName(parent,username){
-  const node=el('strong','@'+username,parent);
+  const node=button(parent,'@'+username,()=>showMember(username));node.className='member-name';
   if(!meta?.profile||username==='Ally'||username.toLowerCase()===meta.profile.username.toLowerCase())return node;
   const btn=button(parent,'Añadir amigo',()=>openFriends(username));btn.className='friend-inline';return node;
 }
@@ -432,6 +432,31 @@ function accessProfile(resume){
   el('small','Para generar o renovar la clave, abre «Mi perfil» en el dispositivo donde ya estás identificado. Cada clave nueva invalida la anterior.',content);
 }
 async function session(resume){if(meta.profile)return resume();chooseProfile(resume);}
+async function showMember(username){
+  const data=await api('member/'+encodeURIComponent(username));
+  open('Perfil público');const p=data.profile;
+  const banner=el('div',undefined,content);banner.className='member-banner member-'+p.color;
+  el('span',p.avatar,banner).className='member-avatar';el('h3','@'+p.username,banner);
+  el('strong',p.rank,banner).className='member-rank';
+  el('p',p.model||'Consola no indicada',content);
+  if(p.bio)el('p',p.bio,content);
+  el('p',p.helpful+' votos positivos recibidos de otros usuarios · '+p.posts+' publicaciones públicas',content);
+  el('h3','Publicaciones recientes',content);
+  for(const post of data.recent)link(el('p',undefined,content),post.title,'/?post='+post.id);
+  if(!data.recent.length)el('p','Sin publicaciones públicas.',content);
+}
+async function editPublicProfile(){
+  const data=await api('member/'+encodeURIComponent(meta.profile.username));const p=data.profile;
+  open('Personalizar perfil público');
+  const f=el('form',undefined,content);f.className='stack';
+  select(f,'Avatar','avatar',['🎮','🤖','🕹️','👾','🚀','🐉','⚡','🐱'].map(v=>[v,v])).value=p.avatar;
+  select(f,'Color del perfil','color',[['purple','Morado'],['green','Verde'],['blue','Azul'],['orange','Naranja']]).value=p.color;
+  input(f,'Consola','model',{max:60,value:p.model});
+  input(f,'Descripción pública','bio',{max:280,multiline:true,value:p.bio});
+  el('small','Estos datos serán públicos. No incluyas información personal.',f);
+  const submit=el('button','Guardar perfil',f);submit.className='primary';
+  f.onsubmit=e=>{e.preventDefault();if(submit.disabled)return;submit.disabled=true;void attempt(async()=>{try{await api('profile/public-details',Object.fromEntries(new FormData(f)));await showProfile();}finally{submit.disabled=false;}});};
+}
 async function showProfile(){
   if(!meta.profile){chooseProfile();return;}
   const data=await api('profile');
@@ -439,6 +464,8 @@ async function showProfile(){
   el('h3','@'+data.profile.username+(data.profile.role==='admin'?' · Administrador':''),content);
   el('p','Miembro desde '+new Date(data.profile.created*1000).toLocaleDateString('es-ES'),content);
   el('p',data.counts.posts+' publicaciones · '+data.counts.comments+' comentarios · '+data.counts.votes+' votos',content);
+  button(content,'Ver mi perfil público',()=>showMember(data.profile.username));
+  button(content,'Personalizar perfil',editPublicProfile).className='primary';
   el('h3','Privacidad de mi estado',content);
   const presence=el('p',data.presenceSharing===1?'Tu estado en línea está visible.':'Tu estado en línea está oculto.',content);
   button(content,data.presenceSharing===1?'Ocultar mi estado':'Mostrar mi estado en línea',async()=>{await changePresence(data.presenceSharing!==1);await showProfile();});
@@ -781,6 +808,37 @@ function card(parent,item,detail=false){
   if(detail)actions(info,item,'post');
   return views;
 }
+let currentThread=null;
+async function threadExtras(parent,post){
+  const section=el('section',undefined,parent);section.className='thread-extras';
+  async function render(){
+    const data=await api('thread-tools/'+post.id);
+    if(!section.isConnected)return;
+    section.replaceChildren();
+    if(data.solution){const box=el('div',undefined,section);box.className='accepted-solution';el('strong','✓ Solución aceptada',box);el('p',data.solution.body,box);if(data.solution.username)el('small','@'+data.solution.username,box);
+      if(post.own)button(box,'Quitar solución',async()=>{await api('thread-tools/'+post.id+'/solution',{comment:null});await load();});
+    }
+    button(section,data.following?'Dejar de seguir el hilo':'Seguir hilo',()=>session(async()=>{await api('thread-tools/'+post.id+'/follow',{enabled:!data.following});await render();}));
+    if(data.poll){
+      const poll=el('div',undefined,section);poll.className='thread-poll';el('h3','Encuesta',poll);
+      const total=data.poll.counts.reduce((a,b)=>a+b,0);
+      data.poll.options.forEach((option,i)=>{
+        const row=el('div',undefined,poll);row.className='poll-option';
+        const text=el('span',option+' · '+data.poll.counts[i]+' votos',row);
+        const bar=el('progress',undefined,row);bar.max=Math.max(total,1);bar.value=data.poll.counts[i];bar.setAttribute('aria-label',text.textContent);
+        const vote=button(row,data.poll.vote===i?'Tu voto':'Votar',()=>session(async()=>{await api('thread-tools/'+post.id+'/vote',{choice:i});await render();}));
+        vote.disabled=!!post.closed||data.poll.vote===i;
+      });el('small',total+' votos en total',poll);
+    }else if(post.own&&!post.closed)button(section,'Crear encuesta',()=>{
+      open('Crear encuesta');const f=el('form',undefined,content);f.className='stack';
+      for(let i=1;i<=6;i++)input(f,'Opción '+i,'option'+i,{required:i<=2,max:80});
+      el('small','Entre dos y seis opciones. Una vez publicada no se puede editar.',f);
+      const submit=el('button','Publicar encuesta',f);submit.className='primary';
+      f.onsubmit=e=>{e.preventDefault();if(submit.disabled)return;submit.disabled=true;void attempt(async()=>{try{await api('thread-tools/'+post.id+'/poll',{options:[...new FormData(f).values()].map(v=>v.trim()).filter(Boolean)});modal.close();await render();}finally{submit.disabled=false;}});};
+    });
+  }
+  try{await render();}catch{el('p','No se han podido cargar las herramientas del hilo.',section);}
+}
 async function comments(parent,post,parentId,sort,after){
   const query=new URLSearchParams({post,sort});
   if(parentId)query.set('parent',parentId);
@@ -794,6 +852,7 @@ async function comments(parent,post,parentId,sort,after){
       describe(article,item);renderText(article,item.body);renderPhotos(article,item,'comment');votes(article,item,'comment');
       const controls=actions(article,item,'comment');
       if(item.depth<3)button(controls,'Responder',()=>session(()=>editor({replyTo:item})));
+      if(currentThread?.id===post&&currentThread.own)button(controls,'Marcar como solución',async()=>{await api('thread-tools/'+post+'/solution',{comment:item.id});await load();});
     }
     if(item.children){
       const branch=el('details',undefined,article);
@@ -836,7 +895,9 @@ async function load(){
   const post=await api('posts/'+encodeURIComponent(postID));
   const counter=card(thread,post,true);
   if(post.status==='pending'){el('p','Pendiente de revisión por moderación.',thread);return;}
+  currentThread=post;
   void recordView(post.id,counter);
+  await threadExtras(thread,post);
   const threadTools=el('section',undefined,thread);threadTools.className='thread-tools';
   el('h2','Comentarios',threadTools);
   if(!post.closed)button(threadTools,'Comentar',()=>session(()=>editor({replyTo:{post:post.id}}))).className='primary';
@@ -846,10 +907,11 @@ async function load(){
   sort.onchange=()=>attempt(async()=>{const fresh=el('div');replies.replaceWith(fresh);replies=fresh;await comments(fresh,post.id,null,sort.value);});
   await comments(replies,post.id,null,sort.value);
 }
+let normalNoticeCount=0;
 function paintNoticeCount(){
   const node=$('#notices');if(!node)return;
   let badge=node.querySelector('.admin-unread');
-  const count=adminNoticeCount+socialNoticeCount;
+  const count=adminNoticeCount+socialNoticeCount+normalNoticeCount;
   if(count<=0){badge?.remove();node.setAttribute('aria-label','Notificaciones');return;}
   if(!badge){badge=el('span',undefined,node);badge.className='admin-unread';badge.setAttribute('aria-hidden','true');}
   badge.textContent=count>99?'99+':String(count);
@@ -953,12 +1015,14 @@ async function showNoticeInbox(){
     try{
       const data=await api('notices');
       if(!activeView(target))return;
-      const signature=JSON.stringify(data.rows);
+      normalNoticeCount=Number(data.unread)||0;paintNoticeCount();
+      const signature=JSON.stringify(data);
       if(automatic&&(signature===normalSignature||normalList.contains(document.activeElement)))return;
       normalSignature=signature;normalList.replaceChildren();
       if(!data.rows.length)el('p','No hay avisos en esta sesión.',normalList);
+      if(data.unread&&data.rows[0])button(normalList,'Marcar avisos como leídos',async()=>{await api('notices/read',{through:data.rows[0].id});await loadNormal();});
       for(const item of data.rows){
-        const p=el('p',undefined,normalList);p.className='profile-notice';
+        const p=el('p',undefined,normalList);p.className='profile-notice'+(item.id>data.through?' unread':'');
         el('small',new Date(item.created*1000).toLocaleString('es-ES'),p);
         el('span',item.message,p);
         if(item.post>0)link(p,'Ver hilo','/?post='+item.post);
@@ -972,6 +1036,7 @@ async function init(){
   meta=await api('meta');
   updateProfile();$('#profile').onclick=()=>attempt(showProfile);
   for(const c of meta.categories)el('option',c.name,form.elements.category).value=c.id;
+  form.elements.q.value=(params.get('q')||'').slice(0,100);
   if(['recent','popular','trend','comments','views'].includes(params.get('sort')))form.elements.sort.value=params.get('sort');
   $('#create').onclick=()=>attempt(()=>session(()=>editor()));
   $('#notices').onclick=()=>attempt(showNoticeInbox);
