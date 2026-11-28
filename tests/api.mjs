@@ -22,6 +22,7 @@ db.exec(readFileSync(new URL('../migrations/0011_friends.sql',import.meta.url),'
 db.exec(readFileSync(new URL('../migrations/0012_social_notifications.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0013_social_features.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0014_lab_account.sql',import.meta.url),'utf8'));
+db.exec(readFileSync(new URL('../migrations/0015_chat_media.sql',import.meta.url),'utf8'));
 const env={
   TURNSTILE_SITE_KEY:'test-site-key',TURNSTILE_SECRET:'test-secret',
   RATE_SECRET:'r'.repeat(64),ADMIN_TOKEN:'a'.repeat(64),
@@ -381,6 +382,17 @@ try{
   assert.equal((await req('friends/summary',{cookie:b})).result.unread,0);
   assert.equal((await req('friends/notifications',{cookie:b})).result.chats.length,0);
   assert.equal((await req('chat/'+incoming.id,{cookie:a})).result.rows[0].read,1);
+  await req('chat/'+incoming.id+'/react',{cookie:thirdCookie,data:{message:sent,emoji:'👍'},status:404});
+  await req('chat/'+incoming.id+'/react',{cookie:b,data:{message:sent,emoji:'👍'}});
+  const reacted=(await req('chat/'+incoming.id,{cookie:a})).result.rows.find(r=>r.id===sent);
+  assert.deepEqual(reacted.reactions,[{emoji:'👍',total:1,own:false}]);
+  await req('chat/'+incoming.id+'/react',{cookie:b,data:{message:sent,emoji:null}});
+  const media=(await req('chat/'+incoming.id+'/send',{cookie:b,data:{body:'[sticker:gaming]',photo,replyTo:sent},status:201})).result;
+  assert.equal(media.hasPhoto,true);assert.equal(media.reply_to,sent);
+  const privateImage=await onRequest({request:new Request('https://community.test/api/chat/'+incoming.id+'/photo?message='+media.id,{headers:{Cookie:a}}),env});
+  assert.equal(privateImage.status,200);assert.equal(privateImage.headers.get('Content-Type'),'image/webp');
+  await req('chat/'+incoming.id+'/photo?message='+media.id,{cookie:thirdCookie,status:404});
+  await req('chat/'+incoming.id+'/send',{cookie:b,data:{body:'Respuesta inválida',replyTo:999999},status:404});
   await req('friends/privacy',{cookie:a,data:{enabled:true},status:400});
   await req('presence/preference',{cookie:a,data:{enabled:true}});
   await req('friends/privacy',{cookie:a,data:{enabled:true}});

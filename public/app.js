@@ -270,7 +270,15 @@ async function openChat(id,username){
   const older=button(view,'Cargar mensajes anteriores',()=>fetchRows('older'));older.hidden=true;
   const log=el('div',undefined,view);log.className='chat-log';log.setAttribute('role','log');log.setAttribute('aria-label','Mensajes de la conversación');log.tabIndex=0;
   const f=el('form',undefined,view);f.className='chat-compose';
-  const message=input(f,'Mensaje','body',{max:2000,required:true,multiline:true});message.rows=2;message.placeholder='Escribe un mensaje…';
+  const message=input(f,'Mensaje','body',{max:2000,multiline:true});message.rows=2;message.placeholder='Escribe un mensaje…';
+  let replyTo=null;
+  const replyBox=el('div',undefined,f);replyBox.className='chat-reply-preview';replyBox.hidden=true;
+  const replyText=el('span','',replyBox);
+  button(replyBox,'Cancelar respuesta',()=>{replyTo=null;replyBox.hidden=true;});
+  stickerPicker(f,message);
+  const photoLabel=el('label','Adjuntar imagen (opcional)',f);
+  const photoInput=el('input',undefined,photoLabel);photoInput.type='file';photoInput.accept='image/jpeg,image/png,image/webp';
+  el('small','Una imagen comprimida por mensaje; caduca junto con el chat.',f);
   const send=el('button','Enviar',f);send.className='primary';send.disabled=true;
   const hint=el('small','',view);hint.className='social-hint';
   let low=0,high=0,busy=false,sending=false,reading=false;
@@ -279,9 +287,28 @@ async function openChat(id,username){
     const bubble=el('article',undefined);bubble.className='chat-message'+(row.own?' own':'');
     bubble.dataset.messageId=row.id;
     if(!row.own&&!row.read)bubble.dataset.unread='true';
-    el('div',row.body,bubble).className='chat-text';
-    const footer=el('small',new Date(row.created*1000).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'})+(row.own?' · Enviado':''),bubble);
-    footer.className='chat-time';return bubble;
+    bubble.dataset.own=row.own?'1':'0';
+    if(row.reply_body)el('blockquote',row.reply_body,bubble).className='chat-quote';
+    if(row.body!=='[Imagen]'||!row.hasPhoto){const text=el('div',undefined,bubble);text.className='chat-text';renderText(text,row.body);}
+    if(row.hasPhoto){const img=el('img',undefined,bubble);img.className='private-chat-photo';img.alt='Imagen adjunta al mensaje';img.loading='lazy';img.src='/api/chat/'+id+'/photo?message='+row.id;}
+    const footer=el('small','',bubble);footer.className='chat-time';footer.dataset.base=new Date(row.created*1000).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'});
+    const actions=el('div',undefined,bubble);actions.className='chat-message-actions';
+    button(actions,'Responder',()=>{replyTo={id:row.id,body:row.body};replyText.textContent='Respuesta a: '+row.body.slice(0,160);replyBox.hidden=false;message.focus();});
+    const react=el('select',undefined,actions);react.className='chat-reaction-select';react.setAttribute('aria-label','Reacción al mensaje');
+    for(const emoji of ['', '👍','❤️','😂','😮'])el('option',emoji||'Reaccionar',react).value=emoji;
+    react.onchange=()=>attempt(async()=>{await api('chat/'+id+'/react',{message:row.id,emoji:react.value||null});await fetchRows('new');});
+    el('span','',actions).className='chat-reaction-summary';
+    updateMessage(bubble,row);return bubble;
+  }
+  function updateMessage(bubble,row){
+    const footer=bubble.querySelector('.chat-time');
+    if(footer)footer.textContent=footer.dataset.base+(bubble.dataset.own==='1'?(row.read?' · Leído':' · Enviado'):'');
+    if(row.read)delete bubble.dataset.unread;
+    if(Array.isArray(row.reactions)){
+      const summary=bubble.querySelector('.chat-reaction-summary'),react=bubble.querySelector('.chat-reaction-select');
+      if(summary)summary.textContent=row.reactions.map(r=>r.emoji+' '+r.total).join('  ');
+      if(react&&document.activeElement!==react)react.value=row.reactions.find(r=>r.own)?.emoji||'';
+    }
   }
   async function markVisible(){
     if(reading||!activeView(view)||document.hidden||!document.hasFocus())return;
@@ -301,7 +328,7 @@ async function openChat(id,username){
   }
   log.addEventListener('scroll',()=>void markVisible(),{passive:true});
   function showMessage(row){
-    if(seen.has(row.id))return;
+    if(seen.has(row.id)){const existing=log.querySelector('[data-message-id="'+row.id+'"]');if(existing)updateMessage(existing,row);return;}
     seen.add(row.id);
     const next=[...log.children].find(node=>Number(node.dataset.messageId)>row.id);
     log.insertBefore(makeMessage(row),next||null);
@@ -310,7 +337,7 @@ async function openChat(id,username){
     if(!activeView(view)||document.hidden||busy)return;
     busy=true;
     try{
-      const data=await api('chat/'+id+(mode==='older'&&low?'?before='+low:mode==='new'&&high?'?after='+high:''));
+      const data=await api('chat/'+id+(mode==='older'&&low?'?before='+low:mode==='new'&&high?'?after='+high+'&updates=1':''));
       if(!activeView(view))return;
       const atBottom=log.scrollHeight-log.scrollTop-log.clientHeight<50,prior=log.scrollHeight;
       if(mode==='older'||!high)older.hidden=!data.more;
@@ -318,6 +345,7 @@ async function openChat(id,username){
         low=low?Math.min(low,row.id):row.id;high=Math.max(high,row.id);
         showMessage(row);
       }
+      for(const row of data.recent||[]){const node=log.querySelector('[data-message-id="'+row.id+'"]');if(node)updateMessage(node,row);}
       if(mode==='older')log.scrollTop+=log.scrollHeight-prior;
       else if(atBottom||mode==='initial')log.scrollTop=log.scrollHeight;
       send.disabled=sending||!data.canSend;hint.textContent=data.canSend?'':'Este usuario no está disponible para recibir mensajes.';
@@ -330,13 +358,17 @@ async function openChat(id,username){
     e.preventDefault();
     if(send.disabled||sending)return;
     sending=true;send.disabled=true;
-    const body=message.value.trim();
+    const body=message.value.trim(),file=photoInput.files?.[0]||null,quoted=replyTo;
     void attempt(async()=>{
       try{
-        const row=await api('chat/'+id+'/send',{body});
+        if(!body&&!file)throw Error('Escribe un mensaje o adjunta una imagen.');
+        const photo=file?await encodePhoto(await compressPhoto(file)):null;
+        const row=await api('chat/'+id+'/send',{body,photo,replyTo:quoted?.id||null});
         if(message.value.trim()===body)message.value='';
+        if(photoInput.files?.[0]===file)photoInput.value='';
+        if(replyTo===quoted){replyTo=null;replyBox.hidden=true;}
         if(activeView(view)){
-          showMessage({...row,body,own:true});
+          showMessage({...row,own:true});
           log.scrollTop=log.scrollHeight;
           void fetchRows();
         }
