@@ -87,3 +87,6 @@ Los avisos se consultan cada 15 segundos con su panel abierto y cada 60 segundos
 
 ## Ally Benchmarks
 La ruta pública `GET /api/benchmarks?game=ID` devuelve hasta 20 aportaciones con FPS numéricos comunicados por usuarios, solo de publicaciones públicas de categorías visibles. No incluye identidad, texto, fotos o datos de sesión. El acceso desde Ally Lab usa CORS restringido a su dominio de producción. No se trata de resultados verificados ni se mezclan automáticamente con las mediciones editoriales.
+
+## Comprobaciones de recuperación y privacidad
+D1 Time Travel: comprueba un marcador actual y uno histórico desde el panel de D1 antes de cambios de esquema; no restaures producción para una prueba. La restauración efectiva debe ensayarse en una base aislada. Time Travel no reemplaza una copia cifrada externa. Nunca guardes exportaciones con conversaciones, hashes de sesión o recuperación en GitHub. Las pruebas de API comprueban que las búsquedas y benchmarks públicos no devuelvan hilos ocultos, pendientes ni categorías ocultas, y que las soluciones ocultas no aparezcan en Ally AI.

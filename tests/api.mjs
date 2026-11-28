@@ -173,6 +173,26 @@ try{
   await req('thread-tools/'+post+'/solution',{cookie:b,data:{comment},status:403});
   await req('thread-tools/'+post+'/solution',{cookie:a,data:{comment}});
   assert.equal((await req('thread-tools/'+post)).result.solution.id,comment);
+  // Privacy regression: the public search used by Ally AI must not leak hidden content.
+  const visibleSearch=()=>req('public-search?q=ajustes');
+  const publicSolution=(await visibleSearch()).result.rows.find(r=>r.id===post);
+  assert.equal(publicSolution.solution,'He probado los ajustes.');
+  db.prepare("UPDATE comments SET status='hidden' WHERE id=?").run(comment);
+  assert.equal((await visibleSearch()).result.rows.find(r=>r.id===post).solution,null);
+  assert.equal((await req('thread-tools/'+post)).result.solution,null);
+  db.prepare("UPDATE comments SET status='public' WHERE id=?").run(comment);
+  for(const status of ['hidden','pending']){
+    db.prepare('UPDATE posts SET status=? WHERE id=?').run(status,post);
+    assert.ok(!(await visibleSearch()).result.rows.some(r=>r.id===post));
+    assert.ok(!(await req('benchmarks?game='+draft.game)).result.rows.some(r=>r.id===post));
+    await req('thread-tools/'+post,{status:404});
+  }
+  db.prepare("UPDATE posts SET status='public' WHERE id=?").run(post);
+  db.prepare("UPDATE categories SET hidden=1 WHERE id=?").run(draft.category);
+  assert.ok(!(await visibleSearch()).result.rows.some(r=>r.id===post));
+  assert.ok(!(await req('benchmarks?game='+draft.game)).result.rows.some(r=>r.id===post));
+  await req('thread-tools/'+post,{status:404});
+  db.prepare("UPDATE categories SET hidden=0 WHERE id=?").run(draft.category);
   await req('thread-tools/'+post+'/solution',{cookie:a,data:{comment:null}});
   await req('thread-tools/'+post+'/poll',{cookie:b,data:{options:['Uno','Dos']},status:403});
   await req('thread-tools/'+post+'/poll',{cookie:a,data:{options:['Uno','Dos']},status:201});
