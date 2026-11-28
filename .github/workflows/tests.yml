@@ -20,6 +20,7 @@ jobs:
       - name: Comprobar sintaxis
         run: |
           node --check public/app.js
+          node --check public/gamepad.js
           node --check public/mascot.js
           node --check public/mascot-motion.js
           node --check functions/api/'[[path]].js'

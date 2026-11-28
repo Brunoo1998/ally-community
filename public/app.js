@@ -1,4 +1,4 @@
-import './gamepad.js';
+import './gamepad.js?v=polish-1';
 const $=selector=>document.querySelector(selector);
 const params=new URLSearchParams(location.search), requestedGame=params.get('game');
 const game=/^[a-z0-9][a-z0-9-]{0,149}$/.test(requestedGame||'')?requestedGame:'';
@@ -792,13 +792,14 @@ async function comments(parent,post,parentId,sort,after){
       const branch=el('details',undefined,article);
       el('summary','Respuestas',branch);
       const list=el('div',undefined,branch);list.className='branches';
+      let loading=false;
       branch.addEventListener('toggle',()=>{
-        if(branch.open&&!list.hasChildNodes())void attempt(()=>comments(list,post,item.id,sort));
+        if(branch.open&&!list.hasChildNodes()&&!loading){loading=true;void attempt(async()=>{try{await comments(list,post,item.id,sort);}finally{loading=false;}});}
       });
     }
   }
   if(result.next){
-    const next=button(parent,'Cargar más comentarios',async()=>{await comments(parent,post,parentId,sort,result.next);next.remove();});
+    const next=button(parent,'Cargar más comentarios',async()=>{if(next.disabled)return;next.disabled=true;try{await comments(parent,post,parentId,sort,result.next);next.remove();}finally{if(next.isConnected)next.disabled=false;}});
   }
 }
 async function list(after){
@@ -814,7 +815,7 @@ async function list(after){
   if(!rows.length&&!after){const empty=el('p','Todavía no hay publicaciones que coincidan.',target);empty.className='empty';}
   rows.forEach(item=>card(target,item));
   if(next){
-    const more=button(target,'Cargar más publicaciones',async()=>{await list(next);more.remove();});
+    const more=button(target,'Cargar más publicaciones',async()=>{if(more.disabled)return;more.disabled=true;try{await list(next);more.remove();}finally{if(more.isConnected)more.disabled=false;}});
   }
 }
 async function load(){
@@ -834,8 +835,8 @@ async function load(){
   if(!post.closed)button(threadTools,'Comentar',()=>session(()=>editor({replyTo:{post:post.id}}))).className='primary';
   else el('p','Debate cerrado.',threadTools);
   const sort=select(threadTools,'Orden de comentarios','comment-sort',[['recent','Recientes'],['popular','Populares']]);
-  const replies=el('div',undefined,thread);
-  sort.onchange=()=>attempt(async()=>{replies.replaceChildren();await comments(replies,post.id,null,sort.value);});
+  let replies=el('div',undefined,thread);
+  sort.onchange=()=>attempt(async()=>{const fresh=el('div');replies.replaceWith(fresh);replies=fresh;await comments(fresh,post.id,null,sort.value);});
   await comments(replies,post.id,null,sort.value);
 }
 function paintNoticeCount(){
@@ -946,7 +947,8 @@ async function init(){
   $('#create').onclick=()=>attempt(()=>session(()=>editor()));
   $('#notices').onclick=()=>attempt(showNoticeInbox);
   $('#friends').onclick=()=>attempt(()=>openFriends());
-  setInterval(()=>{if(!document.hidden){if(activeView(chatView))void chatView.refreshChat?.();else if(activeView(friendsView))void friendsView.refreshFriends?.().catch(()=>{});else if(activeView(noticeView))void noticeView.refreshNotices?.().catch(()=>{});}},15000);
+  setInterval(()=>{if(!document.hidden&&activeView(chatView))void chatView.refreshChat?.();},5000);
+  setInterval(()=>{if(!document.hidden&&!activeView(chatView)){if(activeView(friendsView))void friendsView.refreshFriends?.().catch(()=>{});else if(activeView(noticeView))void noticeView.refreshNotices?.().catch(()=>{});}},15000);
   setInterval(()=>void refreshSocialBadge(),30000);
   window.addEventListener('focus',()=>void refreshSocialBadge());
   window.addEventListener('focus',()=>void refreshAdminNoticeCount());
