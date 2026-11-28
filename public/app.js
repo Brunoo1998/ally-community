@@ -468,7 +468,12 @@ async function showMember(username){
   const data=await api('member/'+encodeURIComponent(username));
   open('Perfil público');const p=data.profile;
   const banner=el('div',undefined,content);banner.className='member-banner member-'+p.color;
-  el('span',p.avatar,banner).className='member-avatar';el('h3','@'+p.username,banner);
+  if(p.customAvatar){
+    const img=el('img',undefined,banner);img.className='member-custom-avatar';img.alt='Avatar de '+p.username;img.src='/api/member/'+encodeURIComponent(p.username)+'/avatar?v='+p.customAvatar.updated;
+    img.onerror=()=>{const fallback=el('span',p.avatar);fallback.className='member-avatar';img.replaceWith(fallback);};
+    if(p.customAvatar.status!=='public')el('small','Avatar '+(p.customAvatar.status==='pending'?'pendiente de revisión':'oculto por moderación'),banner);
+  }else el('span',p.avatar,banner).className='member-avatar';
+  el('h3','@'+p.username,banner);
   el('strong',p.rank,banner).className='member-rank';
   el('p',p.model||'Consola no indicada',content);
   if(p.bio)el('p',p.bio,content);
@@ -476,18 +481,29 @@ async function showMember(username){
   el('h3','Publicaciones recientes',content);
   for(const post of data.recent)link(el('p',undefined,content),post.title,'/?post='+post.id);
   if(!data.recent.length)el('p','Sin publicaciones públicas.',content);
+  if(p.customAvatar?.status==='public'&&p.username!==meta?.profile?.username)link(content,'Denunciar avatar o perfil','/contacto.html');
 }
 async function editPublicProfile(){
   const data=await api('member/'+encodeURIComponent(meta.profile.username));const p=data.profile;
   open('Personalizar perfil público');
   const f=el('form',undefined,content);f.className='stack';
-  select(f,'Avatar','avatar',['🎮','🤖','🕹️','👾','🚀','🐉','⚡','🐱'].map(v=>[v,v])).value=p.avatar;
+  select(f,'Avatar predeterminado','avatar',['🎮','🤖','🕹️','👾','🚀','🐉','⚡','🐱'].map(v=>[v,v])).value=p.avatar;
+  const avatarLabel=el('label','Foto de perfil personalizada (opcional)',f);
+  const photo=el('input',undefined,avatarLabel);photo.type='file';photo.accept='image/jpeg,image/png,image/webp';
+  el('small','Se recorta a un cuadrado de 256 × 256, se comprime en WebP y se eliminan los metadatos. La foto será pública; no uses datos personales.',f);
+  if(p.customAvatar){
+    const preview=el('img',undefined,f);preview.className='member-custom-avatar';preview.alt='Foto actual';preview.src='/api/member/'+encodeURIComponent(p.username)+'/avatar?v='+p.customAvatar.updated;
+    button(f,'Eliminar foto personalizada',async()=>{if(!confirm('¿Eliminar la foto y volver al avatar predeterminado?'))return;await api('profile/avatar',{photo:null});await editPublicProfile();}).dataset.variant='danger';
+  }
   select(f,'Color del perfil','color',[['purple','Morado'],['green','Verde'],['blue','Azul'],['orange','Naranja']]).value=p.color;
   input(f,'Consola','model',{max:60,value:p.model});
   input(f,'Descripción pública','bio',{max:280,multiline:true,value:p.bio});
   el('small','Estos datos serán públicos. No incluyas información personal.',f);
   const submit=el('button','Guardar perfil',f);submit.className='primary';
-  f.onsubmit=e=>{e.preventDefault();if(submit.disabled)return;submit.disabled=true;void attempt(async()=>{try{await api('profile/public-details',Object.fromEntries(new FormData(f)));await showProfile();}finally{submit.disabled=false;}});};
+  f.onsubmit=e=>{e.preventDefault();if(submit.disabled)return;submit.disabled=true;void attempt(async()=>{try{const data=Object.fromEntries(new FormData(f));const image=photo.files?.[0]?await compressAvatar(photo.files[0]):null;
+      await api('profile/public-details',data);
+      if(image)await api('profile/avatar',{photo:await encodePhoto(image)});
+      await showProfile();}finally{submit.disabled=false;}});};
 }
 async function showProfile(){
   if(!meta.profile){chooseProfile();return;}
@@ -542,6 +558,20 @@ function renderPhotos(parent,item,kind,compact=false){
     const a=link(gallery,'',photoUrl(kind,item.id,i));a.target='_blank';a.rel='noopener noreferrer';
     const img=el('img',undefined,a);img.src=a.href;img.alt='Foto '+(i+1)+' adjunta';img.loading='lazy';img.decoding='async';
   }
+}
+async function compressAvatar(file){
+  if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>15000000)throw Error('Selecciona una imagen JPG, PNG o WebP de hasta 15 MB.');
+  const bitmap=await createImageBitmap(file);
+  try{
+    if(!bitmap.width||!bitmap.height||bitmap.width*bitmap.height>50000000)throw Error('Imagen demasiado grande.');
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=256;
+    const ctx=canvas.getContext('2d',{alpha:false});if(!ctx)throw Error('No se puede procesar la imagen.');
+    const size=Math.min(bitmap.width,bitmap.height);ctx.fillStyle='#fff';ctx.fillRect(0,0,256,256);ctx.drawImage(bitmap,(bitmap.width-size)/2,(bitmap.height-size)/2,size,size,0,0,256,256);
+    for(const quality of [.84,.65,.45,.25]){
+      const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/webp',quality));if(blob?.type==='image/webp'&&blob.size<=50000)return blob;
+    }
+    throw Error('No se ha podido comprimir el avatar.');
+  }finally{bitmap.close();}
 }
 async function compressPhoto(file){
   if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>15000000)throw Error('Selecciona una foto JPG, PNG o WebP de hasta 15 MB.');

@@ -172,13 +172,20 @@ async function route(request,env){
     const favorites=await all('SELECT game FROM lab_favorites WHERE owner=? ORDER BY game LIMIT 500',linked.owner);
     return json({username:linked.username,favorites:favorites.map(r=>r.game),expires:linked.expires});
   }
+  if(resource==='member'&&method==='GET'&&id&&action==='avatar'){
+    if(!/^[A-Za-z0-9_]{3,20}$/.test(id))error('Avatar no disponible.',404);
+    const row=await first("SELECT a.photo FROM member_avatars a JOIN profiles p ON p.owner=a.owner JOIN sessions s ON s.id=p.owner WHERE p.username=? COLLATE NOCASE AND s.blocked_until<=? AND (a.status='public' OR a.owner=?)",id,timestamp,who?.id??null);
+    if(!row)error('Avatar no disponible.',404);
+    return new Response(imageBytes(row.photo),{headers:{'Content-Type':'image/webp','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Cross-Origin-Resource-Policy':'same-origin'}});
+  }
   if(resource==='member'&&method==='GET'&&id&&!action){
     if(!/^[A-Za-z0-9_]{3,20}$/.test(id))error('Perfil no disponible.',404);
     const member=await first("SELECT p.username,p.role,p.created,d.avatar,d.bio,d.model,d.color,(SELECT count(*) FROM posts t JOIN categories k ON k.id=t.category WHERE t.owner=p.owner AND t.status='public' AND k.hidden=0) AS posts,(SELECT count(*) FROM votes v JOIN posts t ON v.kind='post' AND v.target=t.id JOIN categories k ON k.id=t.category WHERE t.owner=p.owner AND t.status='public' AND k.hidden=0 AND v.value=1 AND v.owner<>p.owner)+(SELECT count(*) FROM votes v JOIN comments c ON v.kind='comment' AND v.target=c.id JOIN posts t ON t.id=c.post JOIN categories k ON k.id=t.category WHERE c.owner=p.owner AND c.status='public' AND t.status='public' AND k.hidden=0 AND v.value=1 AND v.owner<>p.owner) AS helpful FROM profiles p JOIN sessions s ON s.id=p.owner LEFT JOIN profile_public_details d ON d.owner=p.owner WHERE p.username=? COLLATE NOCASE AND s.blocked_until<=?",id,timestamp);
     if(!member)error('Perfil no disponible.',404);
     const rank=member.role==='admin'?'Administrador':member.username==='Ally'?'Asistente Ally':member.helpful>=100?'Leyenda Ally':member.helpful>=40?'Experto Ally':member.helpful>=15?'Veterano':member.helpful>=5?'Explorador':'Recién llegado';
     const recent=await all("SELECT t.id,t.title FROM posts t JOIN categories k ON k.id=t.category JOIN profiles p ON p.owner=t.owner WHERE p.username=? COLLATE NOCASE AND t.status='public' AND k.hidden=0 ORDER BY t.id DESC LIMIT 10",id);
-    return json({profile:{...member,rank,avatar:member.avatar||'🎮',bio:member.bio||'',model:member.model||'',color:member.color||'purple'},recent});
+    const avatar=await first("SELECT a.status,a.updated,a.owner=? AS own FROM member_avatars a JOIN profiles p ON p.owner=a.owner WHERE p.username=? COLLATE NOCASE AND (a.status='public' OR a.owner=?)",who?.id??null,id,who?.id??null);
+    return json({profile:{...member,rank,avatar:member.avatar||'🎮',bio:member.bio||'',model:member.model||'',color:member.color||'purple',customAvatar:avatar?{status:avatar.status,updated:avatar.updated}:null},recent});
   }
   if(resource==='thread-tools'&&positive(id)){
     const post=positive(id);
@@ -253,6 +260,17 @@ async function route(request,env){
   if(resource==='admin'){
     await admin(request,env);
     if(method==='GET'){
+      if(id==='avatars'){
+        const name=(query.get('username')||'').trim();
+        if(name&&!/^[A-Za-z0-9_]{3,20}$/.test(name))error('Nombre no válido.');
+        const rows=await all("SELECT p.username,a.status,a.updated FROM member_avatars a JOIN profiles p ON p.owner=a.owner WHERE (?='' OR p.username=? COLLATE NOCASE) ORDER BY (a.status='pending') DESC,a.updated DESC LIMIT 50",name,name);
+        return json({rows});
+      }
+      if(id==='avatar-photo'){
+        const row=await first('SELECT a.photo FROM member_avatars a JOIN profiles p ON p.owner=a.owner WHERE p.username=? COLLATE NOCASE',query.get('username')||'');
+        if(!row)error('Avatar no disponible.',404);
+        return new Response(imageBytes(row.photo),{headers:{'Content-Type':'image/webp','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+      }
       const tables=['posts','comments','reports','audit','categories','settings','ally_bot_settings'];
       const fields=table=>table==='ally_bot_settings'?'id,enabled':table==='posts'?'id,owner,category,title,body,game,tags,config,debate,status,closed,pinned,score,replies,hash,created,views,json_array_length(photos) AS photoCount':table==='comments'?'id,post,parent,depth,owner,body,status,score,created,json_array_length(photos) AS photoCount':'*';
       if(id==='export'){
@@ -264,7 +282,14 @@ async function route(request,env){
     }
     const data=await body(request), target=positive(data.id);
     let statement,notice;
-    if(id==='ally-bot'){
+    if(id==='avatar'){
+      if(!/^[A-Za-z0-9_]{3,20}$/.test(data.username||'')||!['public','hidden','deleted'].includes(data.status))error('Avatar no válido.');
+      const item=await first('SELECT a.owner FROM member_avatars a JOIN profiles p ON p.owner=a.owner WHERE p.username=? COLLATE NOCASE',data.username);
+      if(!item)error('Avatar no disponible.',404);
+      statement=data.status==='deleted'?sql('DELETE FROM member_avatars WHERE owner=?',item.owner):sql('UPDATE member_avatars SET status=? WHERE owner=?',data.status,item.owner);
+      notice=sql('INSERT INTO notices(owner,post,message,created) VALUES(?,?,?,?)',item.owner,null,'Moderación ha revisado tu avatar.',timestamp);
+      data.owner=item.owner;
+    }else if(id==='ally-bot'){
       if(typeof data.enabled!=='boolean')error('Estado no válido.');
       statement=sql('UPDATE ally_bot_settings SET enabled=? WHERE id=1',+data.enabled);
     }else if(id==='settings'){
@@ -520,7 +545,19 @@ async function route(request,env){
   if(resource==='profile'&&method==='POST'){
     if(!who)error('Verifica tu sesión primero.',401);
     if(who.blocked_until>timestamp)error('Esta sesión está restringida.',403);
-    const data=await body(request);
+    const data=await body(request,id==='avatar'?210000:24576);
+    if(id==='avatar'){
+      if(!who.username||who.username==='Ally')error('Accede a tu perfil.',401);
+      const settings=await first('SELECT * FROM settings WHERE id=1');
+      if(!settings||settings.readonly)error('La comunidad está en modo de solo lectura.',403);
+      await throttle('profile-avatar:'+owner,6,3600);
+      if(data.photo===null){await run('DELETE FROM member_avatars WHERE owner=?',owner);return json({ok:true,status:'removed'});}
+      if(typeof data.photo!=='string'||data.photo.length>70000)error('Avatar demasiado grande.');
+      imageBytes(data.photo);
+      const status=settings.review?'pending':'public';
+      await run('INSERT INTO member_avatars(owner,photo,status,updated) VALUES(?,?,?,?) ON CONFLICT(owner) DO UPDATE SET photo=excluded.photo,status=excluded.status,updated=excluded.updated',owner,data.photo,status,timestamp);
+      return json({ok:true,status});
+    }
     if(id==='public-details'){
       if(!who.username||who.username==='Ally')error('Accede a tu perfil.',401);
       const settings=await first('SELECT * FROM settings WHERE id=1');

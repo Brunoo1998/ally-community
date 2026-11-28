@@ -78,6 +78,24 @@ async function load(){
     change(box,item.id?'Guardar categoría':'Crear categoría','/category',()=>({id:item.id,name:name.value,position:position.value,hidden:hidden.checked}));
     if(item.id)change(box,'Eliminar categoría vacía','/category',{id:item.id,delete:true});
   }
+  const avatars=group(panel,'Avatares personalizados');
+  avatars.className='avatar-moderation';
+  const name=input(avatars,'Buscar por nombre exacto','');
+  const results=make(avatars,'div');
+  async function loadAvatars(){
+    const data=await api('/avatars?username='+encodeURIComponent(name.value.trim()));results.replaceChildren();
+    if(!data.rows.length)make(results,'p','No hay avatares.');
+    for(const row of data.rows){
+      const box=make(results,'article');make(box,'p','@'+row.username+' · '+row.status);
+      button(box,'Ver foto',async()=>{
+        const response=await fetch('/api/admin/avatar-photo?username='+encodeURIComponent(row.username),{headers:{Authorization:'Bearer '+key}});
+        if(!response.ok)throw Error('Avatar no disponible.');
+        const url=URL.createObjectURL(await response.blob()),img=make(box,'img');img.className='member-custom-avatar';img.alt='Avatar de '+row.username;img.onload=img.onerror=()=>URL.revokeObjectURL(url);img.src=url;
+      });
+      for(const [label,status] of [['Publicar','public'],['Ocultar','hidden'],['Eliminar','deleted']])button(box,label,async()=>{if(status==='deleted'&&!confirm('¿Eliminar este avatar?'))return;await api('/avatar',{username:row.username,status});await loadAvatars();});
+    }
+  }
+  button(avatars,'Consultar avatares',loadAvatars);
   const reports=group(panel,'Denuncias');
   for(const report of data.reports){
     make(reports,'p',report.kind+' #'+report.target+' · '+report.reason+' · '+report.details);
