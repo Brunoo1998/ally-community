@@ -191,7 +191,7 @@ function socialBadge(total){
 }
 async function refreshSocialBadge(){
   if(!meta?.profile||document.hidden||socialBusy)return;
-  socialBusy=true;try{const d=await api('friends/summary');socialBadge(d.requests+d.unread);socialNoticeCount=d.requests+d.unread+d.outcomes;paintNoticeCount();}catch{}finally{socialBusy=false;}
+  const username=meta.profile.username;socialBusy=true;try{const d=await api('friends/summary');if(meta?.profile?.username!==username)return;socialBadge(d.requests+d.unread);socialNoticeCount=d.requests+d.unread+d.outcomes;paintNoticeCount();}catch{}finally{socialBusy=false;}
 }
 function activeView(view){return modal.open&&view?.isConnected;}
 function friendName(parent,username){
@@ -849,9 +849,11 @@ function paintNoticeCount(){
   node.setAttribute('aria-label','Notificaciones: '+count+' avisos sin leer');
 }
 function setAdminNoticeCount(value){adminNoticeCount=Number(value)||0;paintNoticeCount();}
+let adminBadgeBusy=false;
 async function refreshAdminNoticeCount(){
-  if(meta?.profile?.role!=='admin'||document.hidden)return;
-  try{const data=await api('admin-notices?count=1');if(meta?.profile?.role==='admin')setAdminNoticeCount(data.unread);}catch{}
+  if(meta?.profile?.role!=='admin'||document.hidden||adminBadgeBusy)return;
+  const username=meta.profile.username;adminBadgeBusy=true;
+  try{const data=await api('admin-notices?count=1');if(meta?.profile?.role==='admin'&&meta.profile.username===username)setAdminNoticeCount(data.unread);}catch{}finally{adminBadgeBusy=false;}
 }
 async function showNoticeInbox(){
   open('Notificaciones');
@@ -906,12 +908,18 @@ async function showNoticeInbox(){
     el('p','Solo disponible para tu perfil de administrador. Los avisos de suspensión son propuestas y no se ejecutan sin tu autorización.',admin);
     const list=el('div',undefined,admin);list.className='admin-inbox-list';
     const controls=el('div',undefined,admin);controls.className='admin-inbox-controls';
-    let latest=0;
-    async function loadAdmin(before){
+    let latest=0,adminBusy=false,adminSignature='',paged=false;
+    async function loadAdmin(before,automatic=false){
+      if(adminBusy||!activeView(target)||document.hidden)return;
+      if(automatic&&(paged||admin.contains(document.activeElement)))return;
+      adminBusy=true;
+      try{
       const data=await api('admin-notices'+(before?'?before='+encodeURIComponent(before):''));
       if(!admin.isConnected)return;
       setAdminNoticeCount(data.unread);
-      if(!before){list.replaceChildren();latest=data.rows[0]?.id||0;}
+      const signature=JSON.stringify(data);
+      if(automatic&&(signature===adminSignature||paged||admin.contains(document.activeElement)))return;
+      if(!before){adminSignature=signature;paged=false;list.replaceChildren();latest=data.rows[0]?.id||0;}else paged=true;
       for(const row of data.rows){
         const card=el('article',undefined,list);card.className='admin-log'+(row.read_at?'':' unread');
         const label=el('small',row.read_at?'Leído':'Nuevo · Moderación',card);label.className='admin-log-label';
@@ -923,21 +931,35 @@ async function showNoticeInbox(){
       controls.replaceChildren();
       if(data.unread&&latest)button(controls,'Marcar como leídos',async()=>{await api('admin-notices/read',{through:latest});await loadAdmin();});
       if(data.next)button(controls,'Cargar informes anteriores',()=>loadAdmin(data.next));
+      }finally{adminBusy=false;}
     }
+    target.refreshAdminNotices=()=>loadAdmin(undefined,true);
     try{await loadAdmin();}catch(e){if(admin.isConnected)el('p','No se ha podido cargar el registro privado. '+e.message,list);}
   }
   if(!target.isConnected)return;
   const normal=el('section',undefined,target);normal.className='normal-inbox';
   el('h3','Avisos de tu perfil',normal);
-  const data=await api('notices');
-  if(!normal.isConnected)return;
-  if(!data.rows.length)el('p','No hay avisos en esta sesión.',normal);
-  for(const item of data.rows){
-    const p=el('p',undefined,normal);p.className='profile-notice';
-    const stamp=el('small',new Date(item.created*1000).toLocaleString('es-ES'),p);
-    const message=el('span',item.message,p);
-    if(item.post>0)link(p,'Ver hilo','/?post='+item.post);
+  const normalList=el('div',undefined,normal);let normalSignature='',normalBusy=false;
+  async function loadNormal(automatic=false){
+    if(normalBusy||!activeView(target)||document.hidden)return;
+    normalBusy=true;
+    try{
+      const data=await api('notices');
+      if(!activeView(target))return;
+      const signature=JSON.stringify(data.rows);
+      if(automatic&&(signature===normalSignature||normalList.contains(document.activeElement)))return;
+      normalSignature=signature;normalList.replaceChildren();
+      if(!data.rows.length)el('p','No hay avisos en esta sesión.',normalList);
+      for(const item of data.rows){
+        const p=el('p',undefined,normalList);p.className='profile-notice';
+        el('small',new Date(item.created*1000).toLocaleString('es-ES'),p);
+        el('span',item.message,p);
+        if(item.post>0)link(p,'Ver hilo','/?post='+item.post);
+      }
+    }finally{normalBusy=false;}
   }
+  target.refreshProfileNotices=()=>loadNormal(true);
+  await loadNormal();
 }
 async function init(){
   meta=await api('meta');
@@ -948,12 +970,22 @@ async function init(){
   $('#notices').onclick=()=>attempt(showNoticeInbox);
   $('#friends').onclick=()=>attempt(()=>openFriends());
   setInterval(()=>{if(!document.hidden&&activeView(chatView))void chatView.refreshChat?.();},5000);
-  setInterval(()=>{if(!document.hidden&&!activeView(chatView)){if(activeView(friendsView))void friendsView.refreshFriends?.().catch(()=>{});else if(activeView(noticeView))void noticeView.refreshNotices?.().catch(()=>{});}},15000);
-  setInterval(()=>void refreshSocialBadge(),30000);
-  window.addEventListener('focus',()=>void refreshSocialBadge());
-  window.addEventListener('focus',()=>void refreshAdminNoticeCount());
-  document.addEventListener('visibilitychange',()=>void refreshAdminNoticeCount());
-  setInterval(()=>{if(meta?.profile?.role==='admin'&&!document.hidden)void refreshAdminNoticeCount();},60000);
+  function refreshLiveNotices(){
+    if(document.hidden)return;
+    if(activeView(noticeView)){
+      if(noticeView.refreshNotices)void noticeView.refreshNotices().catch(()=>{});else void refreshSocialBadge();
+      void noticeView.refreshAdminNotices?.().catch(()=>{});
+      void noticeView.refreshProfileNotices?.().catch(()=>{});
+    }else{
+      void refreshSocialBadge();
+      if(activeView(friendsView))void friendsView.refreshFriends?.().catch(()=>{});
+    }
+    void refreshAdminNoticeCount();
+  }
+  setInterval(refreshLiveNotices,5000);
+  function refreshOnReturn(){if(document.hidden)return;refreshLiveNotices();if(activeView(chatView))void chatView.refreshChat?.();}
+  window.addEventListener('focus',refreshOnReturn);
+  document.addEventListener('visibilitychange',refreshOnReturn);
   form.onsubmit=e=>{e.preventDefault();void attempt(()=>list());};
   $('#stats').addEventListener('toggle',()=>{
     const node=$('#stats div');
