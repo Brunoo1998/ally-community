@@ -428,31 +428,57 @@ async function route(request,env){
     if(!chatId)error('Conversación no disponible.',404);
     const friend=await first("SELECT f.id,p.username,s.blocked_until FROM friend_links f JOIN profiles p ON p.owner=CASE WHEN f.a=? THEN f.b ELSE f.a END JOIN sessions s ON s.id=p.owner WHERE f.id=? AND f.accepted=1 AND (f.a=? OR f.b=?) AND NOT EXISTS(SELECT 1 FROM friend_blocks WHERE (owner=f.a AND other=f.b) OR (owner=f.b AND other=f.a))",owner,chatId,owner,owner);
     if(!friend)error('Conversación no disponible.',404);
+    if(method==='GET'&&action==='photo'){
+      const message=positive(query.get('message'));
+      const row=message?await first('SELECT photo FROM private_messages WHERE id=? AND friendship=? AND created>=? AND photo IS NOT NULL',message,chatId,cutoff):null;
+      if(!row)error('Imagen no disponible.',404);
+      const bytes=imageBytes(row.photo);
+      return new Response(bytes,{headers:{'Content-Type':'image/webp','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Cross-Origin-Resource-Policy':'same-origin'}});
+    }
     if(method==='GET'&&!action){
       const after=positive(query.get('after')),before=positive(query.get('before'));
       if(after&&before)error('Cursor no válido.');
-      const rows=await all('SELECT id,sender=? AS own,body,created,read_at IS NOT NULL AS read FROM private_messages WHERE friendship=? AND created>=?'+(after?' AND id>?':before?' AND id<?':'')+' ORDER BY id '+(after?'ASC':'DESC')+' LIMIT 41',owner,chatId,cutoff,...(after?[after]:before?[before]:[]));
+      const rows=await all("SELECT m.id,m.sender=? AS own,m.body,m.created,m.read_at IS NOT NULL AS read,m.reply_to,m.photo IS NOT NULL AS hasPhoto,CASE WHEN r.created>=? THEN substr(r.body,1,160) ELSE NULL END AS reply_body FROM private_messages m LEFT JOIN private_messages r ON r.id=m.reply_to AND r.friendship=m.friendship WHERE m.friendship=? AND m.created>=?"+(after?' AND m.id>?':before?' AND m.id<?':'')+' ORDER BY m.id '+(after?'ASC':'DESC')+' LIMIT 41',owner,cutoff,chatId,cutoff,...(after?[after]:before?[before]:[]));
       const more=rows.length>40,visible=rows.slice(0,40);if(!after)visible.reverse();
-      return json({username:friend.username,rows:visible,more,canSend:friend.blocked_until<=timestamp});
+      const recent=after&&query.get('updates')==='1'?await all('SELECT id,read_at IS NOT NULL AS read FROM private_messages WHERE friendship=? AND created>=? ORDER BY id DESC LIMIT 40',chatId,cutoff):[];
+      const ids=[...new Set([...visible,...recent].map(r=>r.id))];
+      const reactions=ids.length?await all('SELECT message,emoji,count(*) AS total,max(owner=?) AS own FROM private_message_reactions WHERE message IN ('+ids.map(()=>'?').join(',')+') GROUP BY message,emoji',owner,...ids):[];
+      for(const row of [...visible,...recent])row.reactions=reactions.filter(r=>r.message===row.id).map(r=>({emoji:r.emoji,total:r.total,own:!!r.own}));
+      return json({username:friend.username,rows:visible,recent,more,canSend:friend.blocked_until<=timestamp});
     }
     if(method!=='POST')error('Ruta no encontrada.',404);
-    const data=await body(request);
+    const data=await body(request,action==='send'?240000:24576);
     if(action==='read'){
       const ids=Array.isArray(data.ids)?data.ids:[];
       if(!ids.length||ids.length>40||ids.some(value=>!positive(value)))error('Mensaje no válido.');
       await run('UPDATE private_messages SET read_at=? WHERE friendship=? AND sender<>? AND read_at IS NULL AND created>=? AND id IN ('+ids.map(()=>'?').join(',')+')',timestamp,chatId,owner,cutoff,...ids.map(Number));
       return json({ok:true});
     }
-    if(action!=='send')error('Ruta no encontrada.',404);
+    if(!['send','react'].includes(action))error('Ruta no encontrada.',404);
     if(friend.blocked_until>timestamp)error('Usuario no disponible.',403);
     const settings=await first('SELECT readonly FROM settings WHERE id=1');
     if(!settings||settings.readonly)error('La comunidad está en modo de solo lectura.',403);
-    const message=field(data.body,2000,1);
+    if(action==='react'){
+      const message=positive(data.message);
+      if(!message||!await first('SELECT id FROM private_messages WHERE id=? AND friendship=? AND created>=?',message,chatId,cutoff))error('Mensaje no disponible.',404);
+      if(data.emoji!==null&&!['👍','❤️','😂','😮'].includes(data.emoji))error('Reacción no válida.');
+      await throttle('chat-react:'+owner,40,60);
+      if(data.emoji===null)await run('DELETE FROM private_message_reactions WHERE message=? AND owner=?',message,owner);
+      else await run('INSERT INTO private_message_reactions(message,owner,emoji) VALUES(?,?,?) ON CONFLICT(message,owner) DO UPDATE SET emoji=excluded.emoji',message,owner,data.emoji);
+      return json({ok:true});
+    }
+    const photo=data.photo==null?null:data.photo;
+    if(photo!==null)imageBytes(photo);
+    const message=field(data.body||'',2000,photo===null?1:0)||'[Imagen]';
+    const reply=data.replyTo==null?null:positive(data.replyTo);
+    if(data.replyTo!=null&&!reply)error('Respuesta no válida.');
+    const quoted=reply?await first('SELECT substr(body,1,160) AS body FROM private_messages WHERE id=? AND friendship=? AND created>=?',reply,chatId,cutoff):null;
+    if(reply&&!quoted)error('El mensaje al que respondes ya no está disponible.',404);
     await throttle('chat-minute:'+owner,20,60);
     await throttle('chat-hour:'+owner,100,3600);
     if(Math.random()<.1)await cleanSocial();
-    const row=await first('INSERT INTO private_messages(friendship,sender,body,created) VALUES(?,?,?,?) RETURNING id',chatId,owner,message,timestamp);
-    return json({id:row.id,created:timestamp},201);
+    const row=await first('INSERT INTO private_messages(friendship,sender,body,created,reply_to,photo) VALUES(?,?,?,?,?,?) RETURNING id',chatId,owner,message,timestamp,reply,photo);
+    return json({id:row.id,created:timestamp,body:message,reply_to:reply,reply_body:quoted?.body||null,hasPhoto:photo!==null,read:0,reactions:[]},201);
   }
   if(resource==='presence'&&method==='POST'){
     const data=await body(request,12000);
