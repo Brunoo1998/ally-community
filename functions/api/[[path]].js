@@ -578,6 +578,12 @@ async function route(request,env){
     return json({ok:true});
   }
   // Solo configuraciones públicas: no se incluyen usuarios, mensajes privados, fotos ni datos de sesión.
+  if(resource==='public-search'&&method==='GET'&&!id){
+    const words=(query.get('q')||'').slice(0,100).match(/[\p{L}\p{N}]+/gu)?.slice(0,8)||[];
+    if(!words.length)return json({rows:[]},200,{'Access-Control-Allow-Origin':'https://ally-lab.pages.dev'});
+    const rows=await all("SELECT p.id,p.title,k.name AS category,substr(p.body,1,300) AS excerpt,substr(c.body,1,500) AS solution FROM post_search s JOIN posts p ON p.id=s.rowid JOIN categories k ON k.id=p.category LEFT JOIN accepted_solutions a ON a.post=p.id LEFT JOIN comments c ON c.id=a.comment AND c.post=p.id AND c.status='public' WHERE post_search MATCH ? AND p.status='public' AND k.hidden=0 ORDER BY (c.id IS NOT NULL) DESC,p.score DESC,p.id DESC LIMIT 12",words.map(v=>'"'+v+'"*').join(' AND '));
+    return json({rows},200,{'Access-Control-Allow-Origin':'https://ally-lab.pages.dev'});
+  }
   if(resource==='benchmarks'&&method==='GET'&&!id){
     const game=gameId(query.get('game'));
     if(!game)error('Identificador de juego no válido.');
