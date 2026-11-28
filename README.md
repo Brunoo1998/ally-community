@@ -84,3 +84,6 @@ Migración 0012: solicitudes entrantes y mensajes no leídos se muestran directa
 ## Mejoras de ecosistema: fase 1
 
 Los avisos se consultan cada 15 segundos con su panel abierto y cada 60 segundos en segundo plano visible. El chat abierto conserva su actualización cada 5 segundos; las pestañas ocultas no consultan. El perfil permite cerrar todas las demás sesiones activas sin cerrar la actual. Renueva además las claves de acceso y recuperación si sospechas que están comprometidas.
+
+## Ally Benchmarks
+La ruta pública `GET /api/benchmarks?game=ID` devuelve hasta 20 aportaciones con FPS numéricos comunicados por usuarios, solo de publicaciones públicas de categorías visibles. No incluye identidad, texto, fotos o datos de sesión. El acceso desde Ally Lab usa CORS restringido a su dominio de producción. No se trata de resultados verificados ni se mezclan automáticamente con las mediciones editoriales.
