@@ -211,9 +211,9 @@ async function openFriends(prefill=''){
   const info=el('p','Solo puedes chatear con amigos que hayan aceptado tu solicitud. No compartas contraseñas ni datos privados.',view);info.className='social-hint';
   const lists=el('div',undefined,view);
   add.onsubmit=e=>{e.preventDefault();if(submit.disabled)return;submit.disabled=true;void attempt(async()=>{try{await api('friends/request',{username:username.value.trim()});username.value='';await reload();}finally{submit.disabled=false;}});};
-  async function act(action,name,warning){
+  async function act(action,name,warning,requestId){
     if(warning&&!confirm(warning))return;
-    await api('friends/'+action,{username:name});await reload();void refreshSocialBadge();
+    await api('friends/'+action,{username:name,requestId});await reload();void refreshSocialBadge();
   }
   let previous='',refreshing=false;
   async function reload(force=true){
@@ -243,8 +243,8 @@ async function openFriends(prefill=''){
           button(controls,row.unread?'Chat · '+row.unread+' nuevos':'Abrir chat',()=>openChat(row.id,row.username)).className='primary';
           button(controls,'Eliminar amigo',()=>act('remove',row.username,'¿Eliminar esta amistad? Se borrará el chat para ambos.'));
         }else{
-          if(!row.outgoing)button(controls,'Aceptar',()=>act('accept',row.username)).className='primary';
-          button(controls,row.outgoing?'Cancelar':'Rechazar',()=>act('decline',row.username));
+          if(!row.outgoing)button(controls,'Aceptar',()=>act('accept',row.username,undefined,row.id)).className='primary';
+          button(controls,row.outgoing?'Cancelar':'Rechazar',()=>act(row.outgoing?'cancel':'decline',row.username,undefined,row.id));
         }
         if(!row.outgoing)button(controls,'Bloquear',()=>act('block',row.username,'¿Bloquear a este usuario? Se eliminará la amistad y el chat para ambos.')).dataset.variant='danger';
       }
@@ -273,13 +273,38 @@ async function openChat(id,username){
   const message=input(f,'Mensaje','body',{max:2000,required:true,multiline:true});message.rows=2;message.placeholder='Escribe un mensaje…';
   const send=el('button','Enviar',f);send.className='primary';send.disabled=true;
   const hint=el('small','',view);hint.className='social-hint';
-  let low=0,high=0,busy=false;
+  let low=0,high=0,busy=false,sending=false,reading=false;
   const seen=new Set();
   function makeMessage(row){
     const bubble=el('article',undefined);bubble.className='chat-message'+(row.own?' own':'');
+    bubble.dataset.messageId=row.id;
+    if(!row.own&&!row.read)bubble.dataset.unread='true';
     el('div',row.body,bubble).className='chat-text';
     const footer=el('small',new Date(row.created*1000).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'})+(row.own?' · Enviado':''),bubble);
     footer.className='chat-time';return bubble;
+  }
+  async function markVisible(){
+    if(reading||!activeView(view)||document.hidden||!document.hasFocus())return;
+    const bounds=log.getBoundingClientRect();
+    const top=Math.max(0,bounds.top),bottom=Math.min(innerHeight,bounds.bottom);
+    const visible=[...log.querySelectorAll('[data-unread]')].filter(node=>{
+      const rect=node.getBoundingClientRect();
+      return Math.min(bottom,rect.bottom)-Math.max(top,rect.top)>=Math.min(rect.height/2,32);
+    }).slice(0,40);
+    if(!visible.length)return;
+    reading=true;
+    try{
+      await api('chat/'+id+'/read',{ids:visible.map(node=>Number(node.dataset.messageId))});
+      for(const node of visible)delete node.dataset.unread;
+      void refreshSocialBadge();
+    }catch{}finally{reading=false;}
+  }
+  log.addEventListener('scroll',()=>void markVisible(),{passive:true});
+  function showMessage(row){
+    if(seen.has(row.id))return;
+    seen.add(row.id);
+    const next=[...log.children].find(node=>Number(node.dataset.messageId)>row.id);
+    log.insertBefore(makeMessage(row),next||null);
   }
   async function fetchRows(mode='new'){
     if(!activeView(view)||document.hidden||busy)return;
@@ -289,21 +314,38 @@ async function openChat(id,username){
       if(!activeView(view))return;
       const atBottom=log.scrollHeight-log.scrollTop-log.clientHeight<50,prior=log.scrollHeight;
       if(mode==='older'||!high)older.hidden=!data.more;
-      const fragment=document.createDocumentFragment();
       for(const row of data.rows){
-        if(seen.has(row.id))continue;
-        seen.add(row.id);low=low?Math.min(low,row.id):row.id;high=Math.max(high,row.id);
-        fragment.append(makeMessage(row));
+        low=low?Math.min(low,row.id):row.id;high=Math.max(high,row.id);
+        showMessage(row);
       }
-      if(mode==='older'){log.prepend(fragment);log.scrollTop+=log.scrollHeight-prior;}
-      else{log.append(fragment);if(atBottom||mode==='initial')log.scrollTop=log.scrollHeight;}
-      send.disabled=!data.canSend;hint.textContent=data.canSend?'':'Este usuario no está disponible para recibir mensajes.';
-      if(high&&mode!=='older'&&data.rows.some(r=>!r.own&&!r.read)){await api('chat/'+id+'/read',{through:high});void refreshSocialBadge();}
+      if(mode==='older')log.scrollTop+=log.scrollHeight-prior;
+      else if(atBottom||mode==='initial')log.scrollTop=log.scrollHeight;
+      send.disabled=sending||!data.canSend;hint.textContent=data.canSend?'':'Este usuario no está disponible para recibir mensajes.';
+      void markVisible();
       if(mode==='new'&&data.more&&activeView(view))setTimeout(()=>void fetchRows(),250);
     }catch(error){if(activeView(view)){hint.textContent=error.message;send.disabled=true;if(error.message==='Conversación no disponible.')log.replaceChildren();}}
     finally{busy=false;}
   }
-  f.onsubmit=e=>{e.preventDefault();if(send.disabled)return;send.disabled=true;void attempt(async()=>{try{await api('chat/'+id+'/send',{body:message.value});message.value='';await fetchRows();}finally{if(activeView(view)&&!hint.textContent)send.disabled=false;}});};
+  f.onsubmit=e=>{
+    e.preventDefault();
+    if(send.disabled||sending)return;
+    sending=true;send.disabled=true;
+    const body=message.value.trim();
+    void attempt(async()=>{
+      try{
+        const row=await api('chat/'+id+'/send',{body});
+        if(message.value.trim()===body)message.value='';
+        if(activeView(view)){
+          showMessage({...row,body,own:true});
+          log.scrollTop=log.scrollHeight;
+          void fetchRows();
+        }
+      }finally{
+        sending=false;
+        if(activeView(view)&&!hint.textContent)send.disabled=false;
+      }
+    });
+  };
   message.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();if(!send.disabled)f.requestSubmit();}});
   view.refreshChat=fetchRows;await fetchRows('initial');
 }

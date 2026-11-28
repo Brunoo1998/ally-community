@@ -223,7 +223,7 @@ async function route(request,env){
     async function cleanSocial(){
       await db.batch([sql('DELETE FROM private_messages WHERE id IN (SELECT id FROM private_messages WHERE created<? LIMIT 200)',cutoff),sql('DELETE FROM friend_activity WHERE rowid IN (SELECT rowid FROM friend_activity WHERE last_active<? LIMIT 100)',cutoff),sql('DELETE FROM friend_links WHERE id IN (SELECT id FROM friend_links WHERE accepted=0 AND created<? LIMIT 100)',cutoff),sql('DELETE FROM friend_outcome_notices WHERE id IN (SELECT id FROM friend_outcome_notices WHERE created<? LIMIT 100)',cutoff)]);
     }
-    const related=(target)=>first('SELECT id,a,b,requested_by,accepted FROM friend_links WHERE a=? AND b=?',...[owner,target].sort());
+    const related=(target)=>first('SELECT id,a,b,requested_by,accepted,created FROM friend_links WHERE a=? AND b=?',...[owner,target].sort());
     const participant=async username=>{
       if(typeof username!=='string'||!/^[A-Za-z0-9_]{3,20}$/.test(username))error('Nombre no válido.');
       const person=await first("SELECT p.owner,p.username,s.blocked_until FROM profiles p JOIN sessions s ON s.id=p.owner WHERE p.username=? COLLATE NOCASE AND p.username<>'Ally' COLLATE NOCASE AND p.owner<>?",username,owner);
@@ -265,7 +265,7 @@ async function route(request,env){
         await db.batch([sql('INSERT INTO friend_activity_preferences(owner,enabled) VALUES(?,?) ON CONFLICT(owner) DO UPDATE SET enabled=excluded.enabled',owner,+data.enabled),...(!data.enabled?[sql('DELETE FROM friend_activity WHERE owner=?',owner)]:[])]);
         return json({ok:true});
       }
-      if(!['request','accept','decline','remove','block','unblock'].includes(id))error('Ruta no encontrada.',404);
+      if(!['request','accept','decline','cancel','remove','block','unblock'].includes(id))error('Ruta no encontrada.',404);
       const person=await participant(data.username),target=person.owner,[left,right]=[owner,target].sort();
       if(id==='block'){
         const count=await first('SELECT count(*) AS n FROM friend_blocks WHERE owner=?',owner);
@@ -277,12 +277,18 @@ async function route(request,env){
       if(id==='request')await cleanSocial();
       const existing=await related(target);
       if(data.requestId!==undefined&&(!existing||positive(data.requestId)!==existing.id))error('Solicitud no disponible.',404);
+      if(id==='cancel'){
+        if(!existing||!await first('DELETE FROM friend_links WHERE id=? AND accepted=0 AND requested_by=? AND created>=? RETURNING id',existing.id,owner,cutoff))
+          error('Solicitud enviada no disponible.',404);
+        return json({ok:true});
+      }
       if(id==='remove'||id==='decline'){
         if(!existing||(id==='remove'?!existing.accepted:!!existing.accepted))error('Solicitud o amistad no disponible.',404);
         if(id==='decline'){
+          if(existing.requested_by===owner||existing.created<cutoff)error('Solicitud recibida no disponible.',404);
           // Only a recipient's explicit rejection creates a notice. Cancellation,
           // expiry and blocking do not reveal a separate rejection.
-          await db.batch([sql("INSERT OR IGNORE INTO friend_outcome_notices(owner,actor,request_id,kind,created) SELECT requested_by,?,id,'declined',? FROM friend_links WHERE id=? AND accepted=0 AND requested_by<>? AND (a=? OR b=?) AND created>=?",owner,timestamp,existing.id,owner,owner,owner,cutoff),sql('DELETE FROM friend_links WHERE id=? AND (a=? OR b=?) AND accepted=0',existing.id,owner,owner)]);
+          await db.batch([sql("INSERT OR IGNORE INTO friend_outcome_notices(owner,actor,request_id,kind,created) SELECT requested_by,?,id,'declined',? FROM friend_links WHERE id=? AND accepted=0 AND requested_by<>? AND (a=? OR b=?) AND created>=?",owner,timestamp,existing.id,owner,owner,owner,cutoff),sql('DELETE FROM friend_links WHERE id=? AND (a=? OR b=?) AND accepted=0 AND requested_by<>? AND created>=?',existing.id,owner,owner,owner,cutoff)]);
         }else await run('DELETE FROM friend_links WHERE id=? AND (a=? OR b=?) AND accepted=1',existing.id,owner,owner);
         return json({ok:true});
       }
@@ -314,8 +320,9 @@ async function route(request,env){
     if(method!=='POST')error('Ruta no encontrada.',404);
     const data=await body(request);
     if(action==='read'){
-      const through=positive(data.through);if(!through)error('Mensaje no válido.');
-      await run('UPDATE private_messages SET read_at=? WHERE friendship=? AND sender<>? AND id<=? AND read_at IS NULL AND created>=?',timestamp,chatId,owner,through,cutoff);
+      const ids=Array.isArray(data.ids)?data.ids:[];
+      if(!ids.length||ids.length>40||ids.some(value=>!positive(value)))error('Mensaje no válido.');
+      await run('UPDATE private_messages SET read_at=? WHERE friendship=? AND sender<>? AND read_at IS NULL AND created>=? AND id IN ('+ids.map(()=>'?').join(',')+')',timestamp,chatId,owner,cutoff,...ids.map(Number));
       return json({ok:true});
     }
     if(action!=='send')error('Ruta no encontrada.',404);
@@ -327,7 +334,7 @@ async function route(request,env){
     await throttle('chat-hour:'+owner,100,3600);
     if(Math.random()<.1)await cleanSocial();
     const row=await first('INSERT INTO private_messages(friendship,sender,body,created) VALUES(?,?,?,?) RETURNING id',chatId,owner,message,timestamp);
-    return json({id:row.id},201);
+    return json({id:row.id,created:timestamp},201);
   }
   if(resource==='presence'&&method==='POST'){
     const data=await body(request,12000);
