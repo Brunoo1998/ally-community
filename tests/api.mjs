@@ -439,14 +439,17 @@ try{
   // Server-to-server exchange: state-bound, single use and scoped to favorites.
   const linkState='a'.repeat(64);
   const grant=(await req('lab-link/authorize',{cookie:a,data:{state:linkState}})).result.code;
-  async function labRequest(action,token,data,expected=200){
-    const response=await onRequest({request:new Request('https://community.test/api/lab-link/'+action,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(data)}),env});
+  async function labRequest(action,token,data,expected=200,origin){
+    const response=await onRequest({request:new Request('https://community.test/api/lab-link/'+action,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',...(origin?{Origin:origin}:{})},body:JSON.stringify(data)}),env});
     const result=await response.json();assert.equal(response.status,expected,action+' '+JSON.stringify(result));return result;
   }
   await labRequest('redeem',grant,{state:'b'.repeat(64)},401);
-  const labSession=(await labRequest('redeem',grant,{state:linkState})).token;
+  await labRequest('redeem',grant,{state:linkState},403,'https://evil.test');
+  const redeemed=await labRequest('redeem',grant,{state:linkState},200,'https://ally-lab.pages.dev');
+  assert.equal(redeemed.username,'TestGamer');assert.deepEqual(redeemed.favorites,[]);
+  const labSession=redeemed.token;
   await labRequest('redeem',grant,{state:linkState},401);
-  assert.equal((await labRequest('state',labSession,{})).username,'TestGamer');
+  assert.equal((await labRequest('state',labSession,{},200,'https://ally-lab.pages.dev')).username,'TestGamer');
   assert.deepEqual((await labRequest('merge',labSession,{games:['cyberpunk','doom']})).favorites,['cyberpunk','doom']);
   assert.deepEqual((await labRequest('favorite',labSession,{game:'doom',enabled:false})).favorites,['cyberpunk']);
   const bGrant=(await req('lab-link/authorize',{cookie:b,data:{state:linkState}})).result.code;
