@@ -23,6 +23,7 @@ db.exec(readFileSync(new URL('../migrations/0012_social_notifications.sql',impor
 db.exec(readFileSync(new URL('../migrations/0013_social_features.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0014_lab_account.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0015_chat_media.sql',import.meta.url),'utf8'));
+db.exec(readFileSync(new URL('../migrations/0016_profile_avatars.sql',import.meta.url),'utf8'));
 const env={
   TURNSTILE_SITE_KEY:'test-site-key',TURNSTILE_SECRET:'test-secret',
   RATE_SECRET:'r'.repeat(64),ADMIN_TOKEN:'a'.repeat(64),
@@ -261,6 +262,18 @@ try{
   assert.equal((await req('posts/'+pending.id)).result.score,1);
   await req('admin/settings',{key:env.ADMIN_TOKEN,data:{readonly:false,review:false}});
   const photo='UklGRjAAAABXRUJQVlA4ICQAAACQAQCdASoQABAAAUAmJQBOl0AAcwAA/vPfZrQtCBz15T4laAA=';
+  await req('profile/avatar',{cookie:a,data:{photo:'bad'},status:400});
+  await req('profile/avatar',{cookie:a,data:{photo}});
+  assert.equal((await req('member/TestGamer')).result.profile.customAvatar.status,'public');
+  const avatar=await onRequest({request:new Request('https://community.test/api/member/TestGamer/avatar'),env});
+  assert.equal(avatar.status,200);assert.equal(avatar.headers.get('Content-Type'),'image/webp');
+  await req('admin/avatar',{cookie:b,data:{username:'TestGamer',status:'hidden'},status:401});
+  await req('admin/avatar',{key:env.ADMIN_TOKEN,data:{username:'TestGamer',status:'hidden'}});
+  assert.equal((await req('member/TestGamer')).result.profile.customAvatar,null);
+  await req('member/TestGamer/avatar',{status:404});
+  await req('profile/avatar',{cookie:a,data:{photo:null}});
+  assert.equal((await req('member/TestGamer',{cookie:a})).result.profile.customAvatar,null);
+
   await req('posts',{cookie:a,data:{category:2,title:'Foto no válida',body:'',photos:['not-an-image']},status:400});
   const photoPost=(await req('posts',{cookie:a,data:{category:2,title:'Captura de pantalla',body:'',photos:[photo]},status:201})).result.id;
   assert.equal((await req('posts/'+photoPost)).result.photoCount,1);
