@@ -249,7 +249,7 @@
 .forum-page .chat-compose label{flex:1;min-width:0}
 .forum-page .chat-compose textarea{resize:vertical;max-height:140px}
 .forum-page .private-chat [hidden]{display:none!important}
-@media(max-width:520px){.forum-page .chat-message{max-width:94%}.forum-page .friend-actions{width:100%}.forum-page .friend-actions button{flex:1 1 auto}.forum-page .chat-compose{flex-wrap:wrap}.forum-page .chat-compose button{flex:1 1 100%}}
+@media(max-width:520px){.forum-page .chat-message{max-width:94%}.forum-page .friend-actions{width:100%}.forum-page .friend-actions button{flex:1 1 auto}.forum-page .chat-compose{gap:.4rem}}
 
 /* Independent account access: identity row above all navigation actions. */
 .forum-page .community-bar .top{display:flex;flex-direction:column;align-items:stretch;gap:.8rem}
@@ -283,3 +283,9 @@
 .forum-page .community-nav>a,.forum-page .community-nav>button{min-height:44px}
 .forum-page .community-nav :focus-visible,.forum-page .community-account :focus-visible{outline-offset:3px}
 @media(prefers-reduced-motion:reduce){.forum-page .community-nav *,.forum-page .post-card,.forum-page .comment,.forum-page .chat-message{transition:none!important;scroll-behavior:auto!important}}
+
+/* Keep the private-message send action alongside the composer at every width. */
+.forum-page .chat-compose{flex-wrap:nowrap;align-items:flex-end}
+.forum-page .chat-compose label{flex:1 1 0;min-width:0;margin:0}
+.forum-page .chat-compose textarea{display:block;width:100%;box-sizing:border-box}
+.forum-page .chat-compose button{flex:0 0 auto;min-height:44px;min-width:44px;margin:0;white-space:nowrap;padding-inline:.8rem}
