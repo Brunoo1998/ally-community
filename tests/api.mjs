@@ -21,6 +21,7 @@ db.exec(readFileSync(new URL('../migrations/0010_presence.sql',import.meta.url),
 db.exec(readFileSync(new URL('../migrations/0011_friends.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0012_social_notifications.sql',import.meta.url),'utf8'));
 db.exec(readFileSync(new URL('../migrations/0013_social_features.sql',import.meta.url),'utf8'));
+db.exec(readFileSync(new URL('../migrations/0014_lab_account.sql',import.meta.url),'utf8'));
 const env={
   TURNSTILE_SITE_KEY:'test-site-key',TURNSTILE_SECRET:'test-secret',
   RATE_SECRET:'r'.repeat(64),ADMIN_TOKEN:'a'.repeat(64),
@@ -410,6 +411,27 @@ try{
   assert.equal((await req('friends/notifications',{cookie:b})).result.outcomes.length,0);
   // Revocar otras sesiones conserva la actual y no afecta a perfiles ajenos.
   assert.ok((await req('profile',{cookie:a})).result.activeDevices>=4);
+  // Server-to-server exchange: state-bound, single use and scoped to favorites.
+  const linkState='a'.repeat(64);
+  const grant=(await req('lab-link/authorize',{cookie:a,data:{state:linkState}})).result.code;
+  async function labRequest(action,token,data,expected=200){
+    const response=await onRequest({request:new Request('https://community.test/api/lab-link/'+action,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(data)}),env});
+    const result=await response.json();assert.equal(response.status,expected,action+' '+JSON.stringify(result));return result;
+  }
+  await labRequest('redeem',grant,{state:'b'.repeat(64)},401);
+  const labSession=(await labRequest('redeem',grant,{state:linkState})).token;
+  await labRequest('redeem',grant,{state:linkState},401);
+  assert.equal((await labRequest('state',labSession,{})).username,'TestGamer');
+  assert.deepEqual((await labRequest('merge',labSession,{games:['cyberpunk','doom']})).favorites,['cyberpunk','doom']);
+  assert.deepEqual((await labRequest('favorite',labSession,{game:'doom',enabled:false})).favorites,['cyberpunk']);
+  const bGrant=(await req('lab-link/authorize',{cookie:b,data:{state:linkState}})).result.code;
+  const bLink=(await labRequest('redeem',bGrant,{state:linkState})).token;
+  assert.deepEqual((await labRequest('state',bLink,{})).favorites,[]);
+  await req('lab-link/revoke',{cookie:a,data:{}});
+  await labRequest('state',labSession,{},401);
+  assert.equal((await labRequest('state',bLink,{})).username,'OtherGamer');
+  await labRequest('logout',bLink,{});
+  await labRequest('state',bLink,{},401);
   await req('profile/revoke-other-devices',{cookie:anonC,data:{},status:401});
   await req('profile/revoke-other-devices',{cookie:a,origin:'https://third-party.test',data:{},status:403});
   await req('profile/revoke-other-devices',{cookie:a,data:{}});

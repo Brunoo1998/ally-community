@@ -99,7 +99,8 @@ async function route(request,env){
   const url=new URL(request.url), path=url.pathname.slice(5).split('/'), query=url.searchParams;
   const [resource,id,action]=path, method=request.method;
   if(path.length>3||action&&resource==='admin')error('Ruta no encontrada.',404);
-  if(method!=='GET'&&(method!=='POST'||request.headers.get('Origin')!==url.origin))error('Origen o método no autorizado.',403);
+  const labServer=resource==='lab-link'&&!action&&method==='POST'&&!request.headers.get('Origin')&&['redeem','state','favorite','merge','logout'].includes(id);
+  if(method!=='GET'&&(method!=='POST'||(!labServer&&request.headers.get('Origin')!==url.origin)))error('Origen o método no autorizado.',403);
   if(!env.DB)error('La base de datos de la comunidad aún no está configurada.',503);
   const db=env.DB;
   const sql=(s,...args)=>db.prepare(s).bind(...args);
@@ -120,6 +121,57 @@ async function route(request,env){
     const row=await first('INSERT INTO rate VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET hits=hits+1 WHERE hits<? RETURNING hits',key+':'+expires,expires,max);
     if(!row)error('Has alcanzado el límite. Inténtalo más tarde.',429);
   };
+  if(resource==='lab-link'&&method==='POST'&&!action){
+    const hex=v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
+    const data=await body(request);
+    if(id==='authorize'||id==='revoke'){
+      if(!who?.username||who.username==='Ally'||!device||device.expires<=timestamp||who.blocked_until>timestamp)error('Accede a tu perfil.',401);
+      await throttle('lab-consent:'+owner,12,3600);
+      if(id==='revoke'){
+        await db.batch([sql('DELETE FROM lab_grants WHERE owner=?',owner),sql('DELETE FROM lab_links WHERE owner=?',owner)]);
+        return json({ok:true});
+      }
+      if(!hex(data.state))error('Solicitud de conexión no válida.');
+      const code=token();
+      await db.batch([sql('DELETE FROM lab_grants WHERE owner=? AND (expires<=? OR device=?)',owner,timestamp,credential),sql('INSERT INTO lab_grants(id,owner,device,state,expires) VALUES(?,?,?,?,?)',await digest(code),owner,credential,await digest(data.state),timestamp+180)]);
+      return json({code,expires:timestamp+180});
+    }
+    if(!labServer)error('Ruta no disponible.',403);
+    const bearer=request.headers.get('Authorization')?.match(/^Bearer ([a-f0-9]{64})$/)?.[1];
+    if(!bearer)error('Conexión no válida.',401);
+    const hashed=await digest(bearer);
+    if(id==='redeem'){
+      if(!hex(data.state))error('Solicitud de conexión no válida.');
+      const grant=await first('DELETE FROM lab_grants WHERE id=? AND state=? AND expires>? RETURNING owner,device',hashed,await digest(data.state),timestamp);
+      if(!grant)error('La autorización ha caducado o ya se utilizó.',401);
+      const profile=await first("SELECT p.username,d.expires FROM profiles p JOIN profile_devices d ON d.owner=p.owner JOIN sessions s ON s.id=p.owner WHERE p.owner=? AND d.id=? AND d.expires>? AND s.blocked_until<=? AND p.username<>'Ally'",grant.owner,grant.device,timestamp,timestamp);
+      if(!profile)error('La sesión de la comunidad ya no está disponible.',401);
+      await run('DELETE FROM lab_links WHERE owner=? AND expires<=?',grant.owner,timestamp);
+      if((await first('SELECT count(*) AS n FROM lab_links WHERE owner=?',grant.owner)).n>=20)error('Desconecta sesiones de Ally Lab desde tu perfil.',429);
+      const session=token(),expires=Math.min(profile.expires,timestamp+2592000);
+      await run('INSERT INTO lab_links(id,owner,device,expires) VALUES(?,?,?,?)',await digest(session),grant.owner,grant.device,expires);
+      return json({token:session,expires});
+    }
+    const linked=await first("SELECT l.owner,p.username,l.expires FROM lab_links l JOIN profiles p ON p.owner=l.owner JOIN profile_devices d ON d.id=l.device AND d.owner=l.owner JOIN sessions s ON s.id=l.owner WHERE l.id=? AND l.expires>? AND d.expires>? AND s.blocked_until<=? AND p.username<>'Ally'",hashed,timestamp,timestamp,timestamp);
+    if(!linked)error('La conexión con Ally Lab ha caducado.',401);
+    if(id==='logout'){await run('DELETE FROM lab_links WHERE id=?',hashed);return json({ok:true});}
+    if(id==='favorite'||id==='merge'){
+      await throttle('lab-favorites:'+linked.owner,120,600);
+      if(id==='favorite'){
+        if(!gameId(data.game)||typeof data.enabled!=='boolean')error('Favorito no válido.');
+        if(data.enabled){
+          await run("INSERT OR IGNORE INTO lab_favorites(owner,game,created) SELECT ?,?,? WHERE (SELECT count(*) FROM lab_favorites WHERE owner=?)<500",linked.owner,data.game,timestamp,linked.owner);
+          if(!await first('SELECT 1 AS yes FROM lab_favorites WHERE owner=? AND game=?',linked.owner,data.game))error('Límite de 500 favoritos.',429);
+        }else await run('DELETE FROM lab_favorites WHERE owner=? AND game=?',linked.owner,data.game);
+      }else{
+        if(!Array.isArray(data.games)||data.games.length>500||data.games.some(v=>!gameId(v)))error('Lista de favoritos no válida.');
+        const unique=[...new Set(data.games)];
+        await run("INSERT OR IGNORE INTO lab_favorites(owner,game,created) SELECT ?,j.value,? FROM json_each(?) j WHERE NOT EXISTS(SELECT 1 FROM lab_favorites f WHERE f.owner=? AND f.game=j.value) LIMIT max(0,500-(SELECT count(*) FROM lab_favorites WHERE owner=?))",linked.owner,timestamp,JSON.stringify(unique),linked.owner,linked.owner);
+      }
+    }else if(id!=='state')error('Ruta no disponible.',404);
+    const favorites=await all('SELECT game FROM lab_favorites WHERE owner=? ORDER BY game LIMIT 500',linked.owner);
+    return json({username:linked.username,favorites:favorites.map(r=>r.game),expires:linked.expires});
+  }
   if(resource==='member'&&method==='GET'&&id&&!action){
     if(!/^[A-Za-z0-9_]{3,20}$/.test(id))error('Perfil no disponible.',404);
     const member=await first("SELECT p.username,p.role,p.created,d.avatar,d.bio,d.model,d.color,(SELECT count(*) FROM posts t JOIN categories k ON k.id=t.category WHERE t.owner=p.owner AND t.status='public' AND k.hidden=0) AS posts,(SELECT count(*) FROM votes v JOIN posts t ON v.kind='post' AND v.target=t.id JOIN categories k ON k.id=t.category WHERE t.owner=p.owner AND t.status='public' AND k.hidden=0 AND v.value=1 AND v.owner<>p.owner)+(SELECT count(*) FROM votes v JOIN comments c ON v.kind='comment' AND v.target=c.id JOIN posts t ON t.id=c.post JOIN categories k ON k.id=t.category WHERE c.owner=p.owner AND c.status='public' AND t.status='public' AND k.hidden=0 AND v.value=1 AND v.owner<>p.owner) AS helpful FROM profiles p JOIN sessions s ON s.id=p.owner LEFT JOIN profile_public_details d ON d.owner=p.owner WHERE p.username=? COLLATE NOCASE AND s.blocked_until<=?",id,timestamp);
