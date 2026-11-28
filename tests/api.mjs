@@ -113,11 +113,19 @@ try{
   const legacyRecovery=await req('profile/recover',{cookie:anonF,data:{code:pa.result.recovery}});
   assert.equal((await req('meta',{cookie:legacyRecovery.cookie.split(';')[0]})).result.profile.username,'TestGamer');
 
-  const draft={title:'Ajustes de Cyberpunk',category:4,body:'Prueba de rendimiento <i>literal</i>.',game:'cyberpunk-2077-rog-xbox-ally-x',config:{model:'Xbox ROG Ally X',resolution:'900p'}};
+  const draft={title:'Ajustes de Cyberpunk',category:4,body:'Prueba de rendimiento <i>literal</i>.',game:'cyberpunk-2077-rog-xbox-ally-x',config:{model:'Xbox ROG Ally X',resolution:'900p',fps:'60 FPS',notes:'No exponer en benchmark'}};
   await req('posts',{data:draft,status:401});
   await req('posts',{cookie:a,data:draft,origin:'https://irrelevant.test',status:403});
   const post=(await req('posts',{cookie:a,data:draft,status:201})).result.id;
   await req('posts',{cookie:a,data:draft,status:409});
+  const publicBench=await req('benchmarks?game=cyberpunk-2077-rog-xbox-ally-x');
+  assert.equal(publicBench.result.rows.length,1);
+  assert.equal(publicBench.result.rows[0].fps,60);
+  assert.equal(publicBench.result.rows[0].id,post);
+  assert.ok(!('notes' in publicBench.result.rows[0]));
+  assert.ok(!('username' in publicBench.result.rows[0]));
+  assert.deepEqual((await req('benchmarks?game=otro-juego')).result.rows,[]);
+  await req('benchmarks?game=INVALID!',{status:400});
   db.close();db=new DatabaseSync(filename);
   const detail=(await req('posts/'+post,{cookie:a})).result;
   assert.equal(detail.own,1);assert.equal(detail.username,'TestGamer');assert.equal(detail.role,'admin');assert.equal(JSON.parse(detail.config).resolution,'900p');

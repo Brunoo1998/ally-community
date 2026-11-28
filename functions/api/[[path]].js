@@ -492,6 +492,26 @@ async function route(request,env){
   if(resource==='notices'&&method==='GET'){
     return json({rows:who?await all('SELECT id,post,message,created FROM notices WHERE owner=? ORDER BY id DESC LIMIT 30',owner):[]});
   }
+  // Solo configuraciones públicas: no se incluyen usuarios, mensajes privados, fotos ni datos de sesión.
+  if(resource==='benchmarks'&&method==='GET'&&!id){
+    const game=gameId(query.get('game'));
+    if(!game)error('Identificador de juego no válido.');
+    const candidates=await all("SELECT p.id,p.created,p.config FROM posts p JOIN categories c ON c.id=p.category WHERE p.game=? AND p.status='public' AND c.hidden=0 AND p.config IS NOT NULL ORDER BY p.id DESC LIMIT 50",game);
+    const rows=[];
+    for(const item of candidates){
+      let config;try{config=JSON.parse(item.config);}catch{continue;}
+      if(!config||typeof config!=='object')continue;
+      const fpsText=String(config.fps||'').trim();
+      if(!/^\d{1,3}(?:[.,]\d{1,2})?(?:\s*fps)?$/i.test(fpsText))continue;
+      const fps=Number.parseFloat(fpsText.replace(',','.'));
+      if(!Number.isFinite(fps)||fps<1||fps>360||!config.model||!config.resolution)continue;
+      const safe={};
+      for(const field of ['model','resolution','quality','tdp','vram','scaling','frameGeneration','power','version','driver'])if(typeof config[field]==='string')safe[field]=config[field].slice(0,100);
+      rows.push({id:item.id,created:item.created,fps,...safe});
+      if(rows.length>=20)break;
+    }
+    return json({game,rows},200,{'Access-Control-Allow-Origin':'https://ally-lab.pages.dev'});
+  }
   if(resource==='stats'&&method==='GET'){
     const cacheKey=new Request(url.origin+'/api/stats-snapshot');
     const cached=globalThis.caches?.default&&await caches.default.match(cacheKey);
