@@ -42,7 +42,22 @@
 :where(.forum-page,.moderation-page) :focus-visible,.forum-page .pad-focus{outline:3px solid #caff9a;outline-offset:3px}
 :where(.forum-page,.moderation-page) .skip:focus{z-index:40;left:1rem;top:1rem;padding:.8rem;background:#111b0b;color:#edffdf;border-radius:.5rem}
 .forum-page #profile{border-color:#75618b;max-width:16rem;font-variant-numeric:tabular-nums}
-.forum-page #profile.admin-profile,.forum-page #moderation{color:#d9ffb6;border-color:#86b568;background:#263527}
+.forum-page #profile.admin-profile{color:#d9ffb6;border-color:#86b568;background:#263527}
+.forum-page .community-nav .lab-return{
+  color:#dcffc0;border-color:#8bc36a;background:#253c27;
+}
+.forum-page .community-nav .lab-return:hover{
+  color:#f2ffe6;border-color:#b7f77e;background:#355135;
+}
+.forum-page .community-nav #moderation{
+  color:#ffe2e5;border-color:#db6475;background:linear-gradient(135deg,#572433,#371923);
+}
+.forum-page .community-nav #moderation:hover{
+  color:#fff1f3;border-color:#ff9eaa;background:#6b2c3d;
+}
+.forum-page .community-nav #moderation:focus-visible,
+.forum-page .community-nav #moderation.pad-focus{outline-color:#ff9eaa}
+.forum-page .community-nav #moderation svg{color:#ff9eaa}
 .forum-page #create{padding-inline:1.05rem}
 .community-main{padding:1.55rem 0 2rem}
 .community-layout{display:grid;grid-template-columns:minmax(0,1fr) 276px;gap:1.25rem;align-items:start}
