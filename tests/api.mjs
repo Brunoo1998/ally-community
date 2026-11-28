@@ -113,6 +113,15 @@ try{
   const legacyRecovery=await req('profile/recover',{cookie:anonF,data:{code:pa.result.recovery}});
   assert.equal((await req('meta',{cookie:legacyRecovery.cookie.split(';')[0]})).result.profile.username,'TestGamer');
 
+  // Revocar otras sesiones conserva la actual y no afecta a perfiles ajenos.
+  assert.ok((await req('profile',{cookie:a})).result.activeDevices>=4);
+  await req('profile/revoke-other-devices',{cookie:anonC,data:{},status:401});
+  await req('profile/revoke-other-devices',{cookie:a,origin:'https://third-party.test',data:{},status:403});
+  await req('profile/revoke-other-devices',{cookie:a,data:{}});
+  assert.equal((await req('profile',{cookie:a})).result.activeDevices,1);
+  assert.equal((await req('meta',{cookie:newDevice})).result.profile,null);
+  assert.equal((await req('meta',{cookie:b})).result.profile.username,'OtherGamer');
+
   const draft={title:'Ajustes de Cyberpunk',category:4,body:'Prueba de rendimiento <i>literal</i>.',game:'cyberpunk-2077-rog-xbox-ally-x',config:{model:'Xbox ROG Ally X',resolution:'900p'}};
   await req('posts',{data:draft,status:401});
   await req('posts',{cookie:a,data:draft,origin:'https://irrelevant.test',status:403});
