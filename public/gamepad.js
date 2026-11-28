@@ -2,7 +2,7 @@ let direction='', next=0;
 const vectors={12:[0,-1],13:[0,1],14:[-1,0],15:[1,0]};
 function focus(dx,dy){
   const scope=document.querySelector('dialog[open]')||document;
-  const candidates=[...scope.querySelectorAll('a[href],summary,button,input,textarea,select')].filter(e=>!e.disabled&&e.getClientRects().length);
+  const candidates=[...scope.querySelectorAll('a[href],summary,button,input,textarea,select')].filter(e=>!e.disabled&&e.tabIndex>=0&&e.getClientRects().length&&getComputedStyle(e).visibility==='visible');
   const active=document.activeElement;
   const target=!candidates.includes(active)?candidates[0]:candidates.reduce((best,node)=>{
     const a=active.getBoundingClientRect(), b=node.getBoundingClientRect();
@@ -24,7 +24,9 @@ function scan(){
   if(document.hidden)return;
   const pad=[...navigator.getGamepads()].find(x=>x?.mapping==='standard');
   if(!pad)return;
-  const key=[0,1,12,13,14,15].find(i=>pad.buttons[i]?.pressed);
+  const x=pad.axes[0]||0,y=pad.axes[1]||0;
+  const stick=Math.max(Math.abs(x),Math.abs(y))>.58?(Math.abs(x)>Math.abs(y)?(x<0?14:15):(y<0?12:13)):undefined;
+  const key=[0,1,12,13,14,15].find(i=>pad.buttons[i]?.pressed)??stick;
   if(key===undefined){direction='';return;}
   if(key===direction&&(!vectors[key]||performance.now()<next))return;
   next=performance.now()+(key===direction?135:340);
@@ -32,6 +34,7 @@ function scan(){
   const active=document.activeElement;
   if(vectors[key])focus(...vectors[key]);
   else if(key===1)document.querySelector('dialog[open]')?.close();
+  else if(!active||!active.matches('a[href],summary,button,input,textarea,select'))focus(0,1);
   else if(active.matches('input:not([type=checkbox]),textarea'))navigator.virtualKeyboard?.show?.();
   else active.click();
 }

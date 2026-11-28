@@ -276,3 +276,10 @@
 .forum-page .social-notice-label{font-size:.76rem;font-weight:800;color:#d6eac9;margin-right:.65rem}
 .forum-page .social-notice time{font-size:.72rem;color:#c7bad6}
 .forum-page .social-notice p{margin:.5rem 0;overflow-wrap:anywhere;line-height:1.5}
+
+/* Pulido: foco estable, lectura del chat y pulsaciones sin saltos de diseño. */
+.forum-page .chat-log{scrollbar-gutter:stable;overflow-anchor:none}
+.forum-page .chat-message{line-height:1.5}
+.forum-page .community-nav>a,.forum-page .community-nav>button{min-height:44px}
+.forum-page .community-nav :focus-visible,.forum-page .community-account :focus-visible{outline-offset:3px}
+@media(prefers-reduced-motion:reduce){.forum-page .community-nav *,.forum-page .post-card,.forum-page .comment,.forum-page .chat-message{transition:none!important;scroll-behavior:auto!important}}
