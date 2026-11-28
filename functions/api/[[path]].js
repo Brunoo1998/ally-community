@@ -99,7 +99,9 @@ async function route(request,env){
   const url=new URL(request.url), path=url.pathname.slice(5).split('/'), query=url.searchParams;
   const [resource,id,action]=path, method=request.method;
   if(path.length>3||action&&resource==='admin')error('Ruta no encontrada.',404);
-  const labServer=resource==='lab-link'&&!action&&method==='POST'&&!request.headers.get('Origin')&&['redeem','state','favorite','merge','logout'].includes(id);
+  // Solo operaciones con bearer opaco; nunca autenticar el canje con cookies del foro.
+  const sourceOrigin=request.headers.get('Origin');
+  const labServer=resource==='lab-link'&&!action&&method==='POST'&&(!sourceOrigin||sourceOrigin==='https://ally-lab.pages.dev')&&['redeem','state','favorite','merge','logout'].includes(id);
   if(method!=='GET'&&(method!=='POST'||(!labServer&&request.headers.get('Origin')!==url.origin)))error('Origen o método no autorizado.',403);
   if(!env.DB)error('La base de datos de la comunidad aún no está configurada.',503);
   const db=env.DB;
@@ -150,7 +152,10 @@ async function route(request,env){
       if((await first('SELECT count(*) AS n FROM lab_links WHERE owner=?',grant.owner)).n>=20)error('Desconecta sesiones de Ally Lab desde tu perfil.',429);
       const session=token(),expires=Math.min(profile.expires,timestamp+2592000);
       await run('INSERT INTO lab_links(id,owner,device,expires) VALUES(?,?,?,?)',await digest(session),grant.owner,grant.device,expires);
-      return json({token:session,expires});
+      // Entregar también los datos mínimos en el mismo intercambio para evitar
+      // que una segunda petición de red impida completar una autorización válida.
+      const favorites=await all('SELECT game FROM lab_favorites WHERE owner=? ORDER BY game LIMIT 500',grant.owner);
+      return json({token:session,expires,username:profile.username,favorites:favorites.map(r=>r.game)});
     }
     const linked=await first("SELECT l.owner,p.username,l.expires FROM lab_links l JOIN profiles p ON p.owner=l.owner JOIN profile_devices d ON d.id=l.device AND d.owner=l.owner JOIN sessions s ON s.id=l.owner WHERE l.id=? AND l.expires>? AND d.expires>? AND s.blocked_until<=? AND p.username<>'Ally'",hashed,timestamp,timestamp,timestamp);
     if(!linked)error('La conexión con Ally Lab ha caducado.',401);
