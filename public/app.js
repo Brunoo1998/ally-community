@@ -477,6 +477,9 @@ async function showProfile(){
     await api('profile/revoke-other-devices',{});await showProfile();
   }).dataset.variant='danger';
   el('small','Si sospechas que otra persona conoce tu clave, renuévala también.',content);
+  el('h3','Conexiones con Ally Lab',content);
+  el('p','Puedes revocar todos los accesos vinculados de Ally Lab sin cerrar el perfil de la comunidad.',content);
+  button(content,'Desconectar Ally Lab de todos los dispositivos',async()=>{if(!confirm('¿Revocar todas las conexiones de Ally Lab?'))return;await api('lab-link/revoke',{});$('#modal-status').textContent='Conexiones revocadas.';}).dataset.variant='danger';
   el('h3','Acceso desde otros dispositivos',content);
   el('p',data.deviceKeyEnabled?'Ya tienes una clave de acceso configurada. Si no la conservas, puedes generar otra.':'Genera una clave privada para entrar con tu mismo nombre desde el móvil, PC u otro navegador.',content);
   button(content,data.deviceKeyEnabled?'Renovar clave para otros dispositivos':'Generar clave para otros dispositivos',async()=>{
@@ -1032,9 +1035,27 @@ async function showNoticeInbox(){
   target.refreshProfileNotices=()=>loadNormal(true);
   await loadNormal();
 }
+function connectLabBanner(){
+  const state=params.get('connectLab');
+  if(!/^[a-f0-9]{64}$/.test(state||''))return;
+  const banner=el('section',undefined);banner.className='thread-extras';
+  $('#main').prepend(banner);
+  el('h2','Conectar con Ally Lab',banner);
+  el('p','Autoriza a Ally Lab a usar tu nombre de usuario y tus favoritos privados. No se comparten claves de recuperación, chats ni permisos de administración.',banner);
+  button(banner,'Revisar y conectar',()=>session(async()=>{
+    open('Autorizar conexión a Ally Lab');
+    el('p','Vas a conectar @'+meta.profile.username+' con https://ally-lab.pages.dev. La conexión caduca y puedes revocarla desde Mi perfil.',content);
+    const allow=button(content,'Autorizar Ally Lab',async()=>{
+      if(allow.disabled)return;allow.disabled=true;
+      try{const data=await api('lab-link/authorize',{state});if(!/^[a-f0-9]{64}$/.test(data.code))throw Error('Autorización no válida.');location.replace(lab+'#'+new URLSearchParams({connect:data.code,state}));}finally{allow.disabled=false;}
+    });allow.className='primary';
+    button(content,'Cancelar',()=>modal.close());
+  })).className='primary';
+  const cancel=link(banner,'Volver sin conectar',lab);cancel.className='ui-button';
+}
 async function init(){
   meta=await api('meta');
-  updateProfile();$('#profile').onclick=()=>attempt(showProfile);
+  updateProfile();$('#profile').onclick=()=>attempt(showProfile);connectLabBanner();
   for(const c of meta.categories)el('option',c.name,form.elements.category).value=c.id;
   form.elements.q.value=(params.get('q')||'').slice(0,100);
   if(['recent','popular','trend','comments','views'].includes(params.get('sort')))form.elements.sort.value=params.get('sort');
