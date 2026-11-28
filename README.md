@@ -80,3 +80,7 @@ Migración 0011: solicitudes aceptadas de forma explícita, bloqueos, mensajes d
 
 ## Notificaciones sociales
 Migración 0012: solicitudes entrantes y mensajes no leídos se muestran directamente desde sus tablas, sin duplicar contenidos. Las respuestas explícitas de amistad crean avisos privados al solicitante con caducidad de 30 días. Cancelar, bloquear o caducar no crea aviso de rechazo. El contador combina los avisos sociales y de administración, sin exponer texto de chat.
+
+## Mejoras de ecosistema: fase 1
+
+Los avisos se consultan cada 15 segundos con su panel abierto y cada 60 segundos en segundo plano visible. El chat abierto conserva su actualización cada 5 segundos; las pestañas ocultas no consultan. El perfil permite cerrar todas las demás sesiones activas sin cerrar la actual. Renueva además las claves de acceso y recuperación si sospechas que están comprometidas.

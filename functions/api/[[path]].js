@@ -370,12 +370,19 @@ async function route(request,env){
     if(!who?.username)error('Crea o recupera tu perfil.',401);
     const counts=await first("SELECT (SELECT count(*) FROM posts WHERE owner=? AND status IN ('public','pending')) AS posts,(SELECT count(*) FROM comments WHERE owner=? AND status IN ('public','pending')) AS comments,(SELECT count(*) FROM votes WHERE owner=?) AS votes",owner,owner,owner);
     const deviceKey=await first('SELECT device_key_hash IS NOT NULL AS enabled FROM profiles WHERE owner=?',owner);
-    return json({profile:publicProfile(who),counts,deviceKeyEnabled:!!deviceKey?.enabled,presenceSharing:await presencePreference()});
+    const devices=await first('SELECT count(*) AS total FROM profile_devices WHERE owner=? AND expires>?',owner,timestamp);
+    return json({profile:publicProfile(who),counts,deviceKeyEnabled:!!deviceKey?.enabled,presenceSharing:await presencePreference(),activeDevices:Number(devices.total)});
   }
   if(resource==='profile'&&method==='POST'){
     if(!who)error('Verifica tu sesión primero.',401);
     if(who.blocked_until>timestamp)error('Esta sesión está restringida.',403);
     const data=await body(request);
+    if(id==='revoke-other-devices'){
+      if(!who.username||!device||device.expires<=timestamp)error('Necesitas una sesión de perfil activa.',401);
+      await throttle('revoke-devices:'+owner,5,3600);
+      await run('DELETE FROM profile_devices WHERE owner=? AND id<>?',owner,credential);
+      return json({ok:true});
+    }
     if(id==='device-key'){
       if(!who.username)error('Crea o recupera tu perfil primero.',401);
       await throttle('device-key:'+owner,3,3600);

@@ -379,6 +379,15 @@ try{
   await req('friends/cancel',{cookie:a,data:{username:'OtherGamer'}});
   assert.equal((await req('friends/notifications',{cookie:a})).result.outcomes.length,2);
   assert.equal((await req('friends/notifications',{cookie:b})).result.outcomes.length,0);
+  // Revocar otras sesiones conserva la actual y no afecta a perfiles ajenos.
+  assert.ok((await req('profile',{cookie:a})).result.activeDevices>=4);
+  await req('profile/revoke-other-devices',{cookie:anonC,data:{},status:401});
+  await req('profile/revoke-other-devices',{cookie:a,origin:'https://third-party.test',data:{},status:403});
+  await req('profile/revoke-other-devices',{cookie:a,data:{}});
+  assert.equal((await req('profile',{cookie:a})).result.activeDevices,1);
+  assert.equal((await req('meta',{cookie:newDevice})).result.profile,null);
+  assert.equal((await req('meta',{cookie:b})).result.profile.username,'OtherGamer');
+
   await req('posts',{overrides:{DB:null},status:503});
   console.log('SQLite persistente, dos sesiones, debate, configuración, comentarios, votos, denuncias, moderación y fallos: OK');
 }finally{

@@ -443,6 +443,13 @@ async function showProfile(){
   const presence=el('p',data.presenceSharing===1?'Tu estado en línea está visible.':'Tu estado en línea está oculto.',content);
   button(content,data.presenceSharing===1?'Ocultar mi estado':'Mostrar mi estado en línea',async()=>{await changePresence(data.presenceSharing!==1);await showProfile();});
   el('small','Solo se muestra un indicador temporal; no se publica la hora de tu última conexión.',content);
+  el('h3','Dispositivos conectados',content);
+  el('p',Number(data.activeDevices||0)+' sesiones activas, incluida la actual.',content);
+  if(data.activeDevices>1)button(content,'Cerrar las demás sesiones',async()=>{
+    if(!confirm('Se cerrarán las sesiones de los demás dispositivos. Esta seguirá abierta. ¿Continuar?'))return;
+    await api('profile/revoke-other-devices',{});await showProfile();
+  }).dataset.variant='danger';
+  el('small','Si sospechas que otra persona conoce tu clave, renuévala también.',content);
   el('h3','Acceso desde otros dispositivos',content);
   el('p',data.deviceKeyEnabled?'Ya tienes una clave de acceso configurada. Si no la conservas, puedes generar otra.':'Genera una clave privada para entrar con tu mismo nombre desde el móvil, PC u otro navegador.',content);
   button(content,data.deviceKeyEnabled?'Renovar clave para otros dispositivos':'Generar clave para otros dispositivos',async()=>{
@@ -982,8 +989,17 @@ async function init(){
     }
     void refreshAdminNoticeCount();
   }
-  setInterval(refreshLiveNotices,5000);
-  function refreshOnReturn(){if(document.hidden)return;refreshLiveNotices();if(activeView(chatView))void chatView.refreshChat?.();}
+  // Mantener el chat activo rápido; reducir la carga de avisos fuera de sus vistas.
+  let lastNoticeRefresh=0;
+  function tickNotices(force=false){
+    if(document.hidden)return;
+    const interval=activeView(noticeView)||activeView(friendsView)?15000:60000;
+    const now=Date.now();
+    if(!force&&now-lastNoticeRefresh<interval)return;
+    lastNoticeRefresh=now;refreshLiveNotices();
+  }
+  setInterval(()=>tickNotices(),5000);
+  function refreshOnReturn(){if(document.hidden)return;tickNotices(Date.now()-lastNoticeRefresh>=10000);if(activeView(chatView))void chatView.refreshChat?.();}
   window.addEventListener('focus',refreshOnReturn);
   document.addEventListener('visibilitychange',refreshOnReturn);
   form.onsubmit=e=>{e.preventDefault();void attempt(()=>list());};
